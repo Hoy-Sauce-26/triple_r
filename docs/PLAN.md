@@ -716,6 +716,25 @@ Nothing is left assumed.
 - Rotation made an optional setting and flagged as non-RR.
 - Tests in every phase; Phase 0 skeleton added.
 
+**Added during Phase 3 implementation**
+
+- **Timers are deadline-based**, storing the instant they end rather than
+  decrementing. A backgrounded phone delivers one late tick instead of many on
+  time; a decrementing rest timer would silently stretch by however long the
+  screen was off.
+- **Rest notifications are scheduled at the deadline**, not fired by a Dart
+  timer, because a backgrounded isolate is not guaranteed to run. They are
+  cancelled when the rest is skipped, paused, or completes with the app in
+  front of the user, so the chime and the notification never double up.
+- **Skipping a rest is silent.** The user just said they were moving on;
+  chiming would tell them something they told us.
+- **Extending a finished timer starts a fresh run** rather than reviving a
+  deadline in the past, and re-arms the alert.
+- **Hold cues are distinct from rest cues** — a softer haptic — since a warmup
+  hold ending is less urgent than a rest ending.
+- Warmup completion is session-scoped and never persisted, as §3 specified;
+  it resets when the user leaves the warmup.
+
 **Added during Phase 2 implementation**
 
 - **Branch-end mastery.** The advancement rule had no answer for the ~24
