@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 13+ requires this to be declared before the runtime request
+         will do anything; without it requestNotificationsPermission() just
+         returns false. Used only to say a rest period has ended. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:label="triple_r"
         android:name="${applicationName}"

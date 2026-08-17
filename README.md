@@ -11,11 +11,14 @@ No account, no ads, no backend — everything lives on the device.
 
 ## Status
 
-**Phase 2 — progression logic.** Schema, the nine progression trees, the
-Progression Config screen, and the rules engine: rep schemes, advancement and
-regression, load arithmetic, session rotation, and warmup gating. The workout
-screens, timers, and charts are not built yet; tabs that are still empty say
-which phase fills them in.
+**Phase 3 — timers and warmup.** Everything from Phase 2, plus the rest and
+hold countdowns, the session clock, audio and haptic cues, screen wakelock,
+scheduled rest notifications, and the dynamic warmup screen. The guided
+pair/triplet workout and the charts are not built yet; tabs that are still
+empty say which phase fills them in.
+
+The session *row* is not written yet — Begin workout starts the clock and
+opens the warmup, and Phase 4 takes it from there.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the full spec and phase roadmap.
 
@@ -24,8 +27,10 @@ See [`docs/PLAN.md`](docs/PLAN.md) for the full spec and phase roadmap.
 | Directory | Holds |
 | --- | --- |
 | `lib/trees/` | The nine progression trees as typed constants, plus branch-gating rules |
-| `lib/domain/` | Pure logic: rep schemes, advance/regress evaluation, units, session planning |
+| `lib/domain/` | Pure logic: rep schemes, advance/regress evaluation, units, countdown math, session planning |
 | `lib/data/` | drift database, tables, migrations |
+| `lib/services/` | Platform edges — clock, audio, haptics, wakelock, notifications. Each is an interface with a fake |
+| `lib/state/` | Riverpod controllers that drive services from domain state |
 | `lib/screens/` | UI |
 
 `lib/domain/` and `lib/trees/` have no Flutter dependency beyond types, which
@@ -71,6 +76,18 @@ flutter test
 > test fails on `!timersPending`. End such tests with `disposeApp(tester)` —
 > and note it pumps `Duration.zero` rather than a bare `pump()`, because
 > `pump()` with no argument does not advance the fake clock at all.
+
+> **Timers are deadline-based, never decrement-based.** A running countdown
+> stores the instant it ends and derives what is left. A phone that sleeps or
+> throttles timers delivers one late tick instead of hundreds on time, and a
+> decrementing counter would come back that much wrong. Tests drive `FakeClock`
+> and `FakeTicker` directly, so a 90-second rest costs no wall time.
+
+> **Republish a new instance on each tick.** Riverpod compares by identity, so
+> `state = state` notifies nobody — the timer keeps running while the on-screen
+> seconds freeze. `Countdown.tick()` exists solely to return a distinct object.
+> Unit tests read `remaining` directly and cannot see this; only a widget test
+> catches it.
 
 > **Riverpod 3 auto-disposes providers with no listeners.** In a bare
 > `ProviderContainer` test, `read(provider.future)` can tear the element down
