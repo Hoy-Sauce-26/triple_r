@@ -165,7 +165,7 @@ Trees are hardcoded Dart constants (not JSON — no reason to pay parse cost or
 lose type safety for data that ships with the binary).
 
 ```dart
-enum Metric { reps, repsPerSide, timed }
+enum Metric { reps, timed }
 enum ProgressionMode { exercise, load }
 enum BranchKind { linear, alternating }
 
@@ -173,15 +173,16 @@ class Exercise {
   final String id;          // stable slug — see §2.4
   final String name;        // display name, free to change
   final Metric metric;
+  final bool perSide;       // orthogonal to metric — see note below
   final bool loadable;      // shows a weight field
   final ProgressionMode mode;
-  final Uri? wikiUrl;
+  final String? wikiUrl;
 }
 
 class Branch {
   final String id;
   final String name;
-  final int attachesAtLevel; // 1-based index into the trunk it forks from
+  final int attachesAtLevel; // 1-based level on the canonical line
   final bool isDefault;
   final BranchKind kind;
   final List<String> exerciseIds;
@@ -201,10 +202,23 @@ class Path {
 }
 ```
 
+> **`perSide` is a flag, not a `Metric` value.** The first draft had
+> `Metric { reps, repsPerSide, timed }`, which cannot express Copenhagen
+> Planks — marked `[S][T]`, timed *and* per side. The two are independent
+> axes, so `perSide` is its own bool.
+
+> **`attachesAtLevel` counts along the canonical line**, defined as
+> `trunkIds + defaultBranch.exerciseIds` — not the trunk alone, as the first
+> draft said. The squat path forced this: its trunk is two exercises, but
+> `stepup` and `pistol` fork at level 5, and levels 3–4 (Split Squats,
+> Bulgarian Split Squats) live inside the default `bodyweight` branch. A
+> branch forking above the trunk is therefore reachable only by having
+> travelled the default branch to get there.
+
 A user's progression for a path on a linear branch is:
 
 ```
-trunk[0 .. branch.attachesAtLevel - 2] ++ branch.exerciseIds
+canonicalLine[0 .. branch.attachesAtLevel - 2] ++ branch.exerciseIds
 ```
 
 For an alternating branch the trunk prefix is identical, but the branch tail is
@@ -478,7 +492,7 @@ force-quit mid-workout does not lose logged sets.
 "Requires Timed Sets". The CHECK constraint enforces exactly one.
 
 **Per-side exercises store one number, meaning "per side."** The exercise's
-`Metric.repsPerSide` tells the UI to label it "× 8 per side" and tells
+`perSide` flag tells the UI to label it "× 8 per side" and tells
 analytics not to compare it against bilateral volume. Tracking left and right
 separately is deliberately out of scope — the RR does not distinguish them, and
 two more columns would complicate every read path for a feature nobody asked
@@ -701,6 +715,17 @@ Nothing is left assumed.
 - Exercise ID stability policy.
 - Rotation made an optional setting and flagged as non-RR.
 - Tests in every phase; Phase 0 skeleton added.
+
+**Corrected during Phase 1 implementation**
+
+- `perSide` split out of `Metric` — the three-valued enum could not represent
+  Copenhagen Planks, which are timed *and* per side.
+- `attachesAtLevel` redefined to index the canonical line (trunk + default
+  branch) rather than the trunk, which the squat path's `stepup` and `pistol`
+  branches broke.
+- Branch gating exempts the default branch and the user's current branch from
+  the level check — otherwise squat's default branch, which forks at level 3,
+  renders as locked for a beginner sitting at level 1 on it.
 
 **Added after review**
 
