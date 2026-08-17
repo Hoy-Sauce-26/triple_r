@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/database.dart';
+import 'domain/session_plan.dart';
+import 'domain/units.dart';
 import 'trees/paths.dart';
 import 'trees/tree_rules.dart';
 
@@ -41,4 +43,56 @@ final pathPositionsProvider = StreamProvider<Map<String, PathPosition>>((ref) {
 /// alternating hinge pattern.
 final completedSessionCountProvider = FutureProvider<int>((ref) {
   return ref.watch(databaseProvider).completedSessionCount();
+});
+
+/// The user's unit system. Defaults to imperial until the profile loads, so
+/// nothing renders a weight in the wrong unit mid-flight.
+final unitSystemProvider = Provider<UnitSystem>((ref) {
+  final profile = ref.watch(profileProvider).value;
+  return profile == null
+      ? UnitSystem.imperial
+      : UnitSystem.parse(profile.unitSystem);
+});
+
+/// Every exercise the user has reached, across all paths. Drives the gated
+/// warmup items.
+final reachedExercisesProvider = Provider<Set<String>>((ref) {
+  final positions = ref.watch(pathPositionsProvider).value;
+  return positions == null ? const {} : reachedExercises(positions);
+});
+
+/// The shape of the next workout: pair order, triplet, and the warmup items
+/// the user has unlocked.
+///
+/// Null while the pieces it needs are still loading — callers should show a
+/// spinner rather than plan a session against a session count of zero, which
+/// would silently pick rotation 0.
+final nextSessionPlanProvider = Provider<SessionPlan?>((ref) {
+  final completed = ref.watch(completedSessionCountProvider).value;
+  final profile = ref.watch(profileProvider).value;
+  if (completed == null || profile == null) return null;
+
+  return planSession(
+    completedSessions: completed,
+    rotatePairOrder: profile.rotatePairOrder,
+    reachedExerciseIds: ref.watch(reachedExercisesProvider),
+  );
+});
+
+/// The exercise each path contributes to the next session, keyed by path id.
+final nextSessionExercisesProvider = Provider<Map<String, String>>((ref) {
+  final completed = ref.watch(completedSessionCountProvider).value;
+  final positions = ref.watch(pathPositionsProvider).value;
+  if (completed == null || positions == null) return const {};
+
+  return {
+    for (final path in allPaths)
+      if (positions[path.id] case final position?)
+        path.id: exerciseForSession(
+          path: path,
+          branch: path.branchById(position.branchId) ?? path.defaultBranch,
+          selectedExerciseId: position.exerciseId,
+          completedSessions: completed,
+        ),
+  };
 });

@@ -50,11 +50,15 @@ const _all = <Exercise>[
     name: 'Advanced Shrimp Squats',
     perSide: true,
   ),
+  // Terminal on the default squat branch, and the one bodyweight terminal
+  // that obviously should keep progressing: it is the weighted variant, so it
+  // adds load like Weighted Pull-ups / Dips / Rows do at the ends of theirs.
   Exercise(
     id: 'weighted_shrimp_squats',
     name: 'Weighted Shrimp Squats',
     perSide: true,
     loadable: true,
+    mode: ProgressionMode.load,
   ),
   Exercise(
     id: 'barbell_back_squats',
