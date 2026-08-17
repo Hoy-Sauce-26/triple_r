@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/countdown.dart';
 import '../services/alerts.dart';
 import '../services/clock.dart';
-import '../services/notifications.dart';
 import '../services/screen_wake.dart';
 
 /// All overridden in tests with fakes; the platform implementations here are
@@ -18,10 +17,6 @@ final alertsProvider = Provider<Alerts>((ref) {
   return alerts;
 });
 
-final restNotificationsProvider = Provider<RestNotifications>((ref) {
-  return PlatformRestNotifications();
-});
-
 /// How often running timers re-read the clock.
 ///
 /// Fine enough that the displayed second never looks stuck, coarse enough not
@@ -32,8 +27,13 @@ const tickInterval = Duration(milliseconds: 200);
 
 /// The rest countdown between sets.
 ///
-/// Owns its own ticker so the alert fires whether or not anything is watching
-/// — a user who has switched to another app must still be told.
+/// Owns its own ticker so the chime fires whether or not a widget is watching
+/// it. This is a **foreground** cue only: the screen is held awake for the
+/// whole session, and there is no scheduled OS notification behind it. An
+/// inexact alarm can be deferred by minutes, which is worse than useless for a
+/// 90-second rest, and an exact one costs a revocable runtime permission plus
+/// a Play Store justification. If the user leaves the app entirely, they get
+/// nothing — a deliberate trade, not an oversight.
 class RestTimerController extends Notifier<Countdown> {
   TickerHandle? _handle;
   bool _alerted = false;
@@ -55,7 +55,6 @@ class RestTimerController extends Notifier<Countdown> {
   void start(Duration length) {
     _alerted = false;
     state = state.start(length, _clock.now());
-    _scheduleNotification();
     _startTicking();
   }
 
@@ -65,13 +64,11 @@ class RestTimerController extends Notifier<Countdown> {
     if (!state.isRunning) return;
     state = state.pause(_clock.now());
     _stopTicking();
-    ref.read(restNotificationsProvider).cancelRestEnd();
   }
 
   void resume() {
     if (!state.isPaused) return;
     state = state.resume(_clock.now());
-    _scheduleNotification();
     _startTicking();
   }
 
@@ -83,8 +80,7 @@ class RestTimerController extends Notifier<Countdown> {
       // Extending past a completed timer starts a fresh run, so the alert
       // must be armed again or the second expiry would pass in silence.
       if (wasFinished) _alerted = false;
-      _scheduleNotification();
-      _startTicking();
+        _startTicking();
     }
   }
 
@@ -94,14 +90,12 @@ class RestTimerController extends Notifier<Countdown> {
     _alerted = true;
     state = state.finish();
     _stopTicking();
-    ref.read(restNotificationsProvider).cancelRestEnd();
   }
 
   void reset(Duration length) {
     _alerted = false;
     state = state.reset(length);
     _stopTicking();
-    ref.read(restNotificationsProvider).cancelRestEnd();
   }
 
   void _startTicking() {
@@ -123,20 +117,13 @@ class RestTimerController extends Notifier<Countdown> {
       }
       state = state.finish();
       _stopTicking();
-      ref.read(restNotificationsProvider).cancelRestEnd();
-      return;
+        return;
     }
     // Republish a fresh instance so watchers recompute `remaining` —
     // reassigning the same object notifies nobody.
     state = state.tick();
   }
 
-  void _scheduleNotification() {
-    final deadline = state.deadline;
-    if (deadline != null) {
-      ref.read(restNotificationsProvider).scheduleRestEnd(deadline);
-    }
-  }
 }
 
 final restTimerProvider =
@@ -228,7 +215,6 @@ class SessionClockController extends Notifier<SessionClock?> {
     state = null;
     _stopTicking();
     ref.read(screenWakeProvider).disable();
-    ref.read(restNotificationsProvider).cancelRestEnd();
   }
 
   void _stopTicking() {

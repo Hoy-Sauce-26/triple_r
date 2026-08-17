@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/paths.dart';
+import 'active_workout_screen.dart';
 import 'warmup_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -15,12 +17,17 @@ class DashboardScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final plan = ref.watch(nextSessionPlanProvider);
     final exercises = ref.watch(nextSessionExercisesProvider);
+    final active = ref.watch(activeSessionProvider).value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Triple R')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
+          if (active != null) ...[
+            _ResumeBanner(startedAt: active.startedAt),
+            const SizedBox(height: 12),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -56,8 +63,9 @@ class DashboardScreen extends ConsumerWidget {
                   ],
                   const SizedBox(height: 20),
                   FilledButton.icon(
-                    onPressed:
-                        plan == null ? null : () => _beginWorkout(context, ref),
+                    onPressed: plan == null || active != null
+                        ? null
+                        : () => _beginWorkout(context, ref),
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Begin workout'),
                   ),
@@ -71,32 +79,91 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-/// Starts the workout clock, holds the screen awake, and opens the warmup.
+/// Opens a session row, starts the clock, and hands off to the warmup.
 ///
-/// The session *row* is not written here — that, and everything after the
-/// warmup, is Phase 4. This is the smallest wiring that makes the wakelock and
-/// the session clock actually run rather than merely exist.
+/// The session is written to the database *before* navigating, so a crash
+/// anywhere after this point leaves something to resume into rather than
+/// losing the workout.
 Future<void> _beginWorkout(BuildContext context, WidgetRef ref) async {
-  final session = ref.read(sessionClockProvider.notifier);
-
-  // Asked for here rather than at launch: the user has just said they are
-  // working out, so a request to tell them when a rest ends makes sense.
-  await ref.read(restNotificationsProvider).requestPermission();
-
-  session.start();
-  if (!context.mounted) {
-    session.stop();
-    return;
-  }
+  await ref.read(activeSessionProvider.notifier).start();
+  if (!context.mounted) return;
 
   await Navigator.of(context).push(
     MaterialPageRoute<void>(builder: (_) => const WarmupScreen()),
   );
 
-  // Leaving the warmup — by finishing or by backing out — ends the session for
-  // now, so the wakelock is never left on after the user walks away.
-  session.stop();
+  // Back on the dashboard. The session row survives — it is resumable — but
+  // the clock and the wakelock must not, or a user who backed out and walked
+  // away leaves the screen pinned on until the battery dies. Elapsed time is
+  // derived from `startedAt`, so resuming picks up the true total.
+  ref.read(sessionClockProvider.notifier).stop();
   ref.read(warmupChecklistProvider.notifier).clear();
+}
+
+/// Picks up a workout that was interrupted.
+Future<void> _resumeWorkout(BuildContext context, WidgetRef ref) async {
+  await ref.read(activeSessionProvider.notifier).resume();
+  if (!context.mounted) return;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(builder: (_) => const ActiveWorkoutScreen()),
+  );
+  ref.read(sessionClockProvider.notifier).stop();
+}
+
+/// Offered when an `in_progress` session is found on launch.
+class _ResumeBanner extends ConsumerWidget {
+  const _ResumeBanner({required this.startedAt});
+
+  final DateTime startedAt;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Workout in progress', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Started ${_startedLabel(startedAt)}. Your logged sets are safe.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => _discard(context, ref),
+                  child: const Text('Discard'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: () => _resumeWorkout(context, ref),
+                  child: const Text('Resume'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _startedLabel(DateTime at) {
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    return '$hour:${at.minute.toString().padLeft(2, '0')} '
+        '${at.hour < 12 ? 'am' : 'pm'}';
+  }
+
+  Future<void> _discard(BuildContext context, WidgetRef ref) async {
+    // Abandoned rather than deleted: the sets were really performed, and the
+    // rotation simply does not advance.
+    await ref.read(activeSessionProvider.notifier).finish(completed: false);
+  }
 }
 
 class _PlanRow extends StatelessWidget {

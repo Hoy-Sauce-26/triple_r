@@ -6,25 +6,21 @@ import 'package:triple_r/main.dart';
 import 'package:triple_r/providers.dart';
 import 'package:triple_r/services/alerts.dart';
 import 'package:triple_r/services/clock.dart';
-import 'package:triple_r/services/notifications.dart';
 import 'package:triple_r/services/screen_wake.dart';
 import 'package:triple_r/state/timer_providers.dart';
 
-/// The dashboard's Begin-workout wiring: the session clock, the wakelock, and
-/// the notification permission prompt.
+/// The dashboard's Begin-workout wiring: the session clock and the wakelock.
 void main() {
   late AppDatabase db;
   late FakeClock clock;
   late FakeTicker ticker;
   late FakeScreenWake wake;
-  late FakeRestNotifications notifications;
 
   setUp(() {
     db = AppDatabase.memory();
     clock = FakeClock();
     ticker = FakeTicker();
     wake = FakeScreenWake();
-    notifications = FakeRestNotifications();
   });
 
   tearDown(() => db.close());
@@ -38,7 +34,6 @@ void main() {
           tickerProvider.overrideWithValue(ticker),
           alertsProvider.overrideWithValue(RecordingAlerts()),
           screenWakeProvider.overrideWithValue(wake),
-          restNotificationsProvider.overrideWithValue(notifications),
         ],
         child: const TripleRApp(),
       ),
@@ -72,7 +67,6 @@ void main() {
 
     expect(find.text('Warmup'), findsOneWidget);
     expect(wake.isEnabled, isTrue, reason: 'the screen must stay on mid-set');
-    expect(notifications.initialised || notifications.permissionGranted, isTrue);
 
     await disposeApp(tester);
   });
@@ -93,9 +87,10 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('leaving the warmup releases the wakelock', (tester) async {
-    // Otherwise a user who backs out mid-warmup leaves the screen pinned on
-    // until the battery dies.
+  testWidgets('backing out of the warmup releases the wakelock but keeps the '
+      'session resumable', (tester) async {
+    // The session row survives so nothing logged is lost, but the screen must
+    // not stay pinned on after the user walks away.
     await pumpApp(tester);
     await tester.tap(find.text('Begin workout'));
     await tester.pumpAndSettle();
@@ -105,12 +100,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(wake.isEnabled, isFalse);
-    expect(find.text('Begin workout'), findsOneWidget);
+    expect(find.text('Workout in progress'), findsOneWidget);
+    expect(await db.inProgressSession, isNotNull);
 
     await disposeApp(tester);
   });
 
-  testWidgets('the warmup checklist resets between workouts', (tester) async {
+  testWidgets('the warmup checklist resets when the session is resumed',
+      (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('Begin workout'));
     await tester.pumpAndSettle();
@@ -121,10 +118,10 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Begin workout'));
-    await tester.pumpAndSettle();
 
-    expect(find.text('0/4'), findsOneWidget);
+    // Resuming goes straight to the workout, so the stale tick is gone with
+    // the checklist rather than lingering into the next visit.
+    expect(find.text('1/4'), findsNothing);
 
     await disposeApp(tester);
   });

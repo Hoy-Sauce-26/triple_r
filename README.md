@@ -89,6 +89,11 @@ flutter test
 > Unit tests read `remaining` directly and cannot see this; only a widget test
 > catches it.
 
+> **Dispose a test-owned `ProviderContainer` *before* the last pump.** With
+> `UncontrolledProviderScope` the test owns the container, so unmounting the
+> tree does not dispose it — and disposing it cancels drift's query streams,
+> scheduling the same zero-duration timer described above. Dispose, then pump.
+
 > **Riverpod 3 auto-disposes providers with no listeners.** In a bare
 > `ProviderContainer` test, `read(provider.future)` can tear the element down
 > before the underlying stream emits, and the future never completes — it

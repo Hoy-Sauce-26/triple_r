@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:triple_r/domain/countdown.dart';
 import 'package:triple_r/services/alerts.dart';
 import 'package:triple_r/services/clock.dart';
-import 'package:triple_r/services/notifications.dart';
 import 'package:triple_r/services/screen_wake.dart';
 import 'package:triple_r/state/timer_providers.dart';
 
@@ -14,7 +13,6 @@ void main() {
   late FakeTicker ticker;
   late RecordingAlerts alerts;
   late FakeScreenWake wake;
-  late FakeRestNotifications notifications;
   late ProviderContainer container;
 
   setUp(() {
@@ -22,14 +20,12 @@ void main() {
     ticker = FakeTicker();
     alerts = RecordingAlerts();
     wake = FakeScreenWake();
-    notifications = FakeRestNotifications();
     container = ProviderContainer(
       overrides: [
         clockProvider.overrideWithValue(clock),
         tickerProvider.overrideWithValue(ticker),
         alertsProvider.overrideWithValue(alerts),
         screenWakeProvider.overrideWithValue(wake),
-        restNotificationsProvider.overrideWithValue(notifications),
       ],
     );
     // Riverpod 3 auto-disposes unlistened providers, which would tear the
@@ -87,19 +83,18 @@ void main() {
       expect(rest().remaining, Duration.zero);
     });
 
-    test('pausing freezes the countdown and cancels the scheduled alert', () {
+    test('pausing freezes the countdown against a moving clock', () {
       rest().start(const Duration(seconds: 90));
       elapse(const Duration(seconds: 30));
       rest().pause();
 
-      final cancelsAfterPause = notifications.cancelCount;
+      // Ten minutes of wall time must not touch a paused timer, which is the
+      // one case a deadline alone cannot express.
       clock.advance(const Duration(minutes: 10));
       expect(rest().remaining, const Duration(seconds: 60));
-      expect(notifications.pending, isNull);
       expect(ticker.activeCount, 0);
 
       rest().resume();
-      expect(notifications.cancelCount, greaterThan(cancelsAfterPause - 1));
       expect(rest().remaining, const Duration(seconds: 60));
 
       elapse(const Duration(seconds: 60));
@@ -114,7 +109,6 @@ void main() {
 
       expect(container.read(restTimerProvider).isFinished, isTrue);
       expect(alerts.total, 0);
-      expect(notifications.pending, isNull);
 
       elapse(const Duration(seconds: 300));
       expect(alerts.total, 0, reason: 'a skipped rest never chimes');
@@ -147,20 +141,7 @@ void main() {
       );
     });
 
-    test('schedules a notification for the deadline', () {
-      rest().start(const Duration(seconds: 90));
-      expect(
-        notifications.pending,
-        clock.now().add(const Duration(seconds: 90)),
-      );
-    });
 
-    test('cancels the notification when the rest completes in-app', () {
-      // The user heard the chime; a notification afterwards is duplicate.
-      rest().start(const Duration(seconds: 30));
-      elapse(const Duration(seconds: 30));
-      expect(notifications.pending, isNull);
-    });
 
     test('restart reuses the configured length', () {
       rest().start(const Duration(seconds: 60));
@@ -239,14 +220,6 @@ void main() {
       expect(session().elapsed, const Duration(minutes: 20));
     });
 
-    test('stopping clears any pending rest notification', () {
-      session().start();
-      rest().start(const Duration(seconds: 90));
-      expect(notifications.pending, isNotNull);
-
-      session().stop();
-      expect(notifications.pending, isNull);
-    });
   });
 
   group('display formatting', () {

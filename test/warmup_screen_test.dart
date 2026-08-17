@@ -6,7 +6,6 @@ import 'package:triple_r/providers.dart';
 import 'package:triple_r/screens/warmup_screen.dart';
 import 'package:triple_r/services/alerts.dart';
 import 'package:triple_r/services/clock.dart';
-import 'package:triple_r/services/notifications.dart';
 import 'package:triple_r/services/screen_wake.dart';
 import 'package:triple_r/state/timer_providers.dart';
 import 'package:triple_r/theme.dart';
@@ -35,7 +34,6 @@ void main() {
           tickerProvider.overrideWithValue(ticker),
           alertsProvider.overrideWithValue(alerts),
           screenWakeProvider.overrideWithValue(FakeScreenWake()),
-          restNotificationsProvider.overrideWithValue(FakeRestNotifications()),
         ],
         child: MaterialApp(theme: lightTheme, home: const WarmupScreen()),
       ),
@@ -136,15 +134,18 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the finish button waits for the whole list', (tester) async {
+  testWidgets('the finish button is always live, and its label tracks the list',
+      (tester) async {
+    // Deliberately never disabled: blocking someone from training because
+    // they did not tick a checkbox is the app obstructing its own purpose.
     await pumpWarmup(tester);
 
-    final button = find.widgetWithText(FloatingActionButton, 'Finish the list');
+    final button = find.widgetWithText(FloatingActionButton, 'Skip to workout');
     expect(button, findsOneWidget);
     expect(
       tester.widget<FloatingActionButton>(button).onPressed,
-      isNull,
-      reason: 'disabled until every item is done',
+      isNotNull,
+      reason: 'the warmup is advisory, not a gate',
     );
 
     for (final name in ['Shoulder Dislocates', 'Squat Sky Reaches', 'Wrist Prep']) {
@@ -158,7 +159,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('4/4'), findsOneWidget);
-    final done = find.widgetWithText(FloatingActionButton, 'Warmup done');
+    final done = find.widgetWithText(FloatingActionButton, 'Start workout');
     expect(tester.widget<FloatingActionButton>(done).onPressed, isNotNull);
 
     await disposeApp(tester);

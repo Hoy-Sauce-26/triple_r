@@ -20,7 +20,7 @@ throughout.
 | Persistence | `drift` (SQLite) — relational schema, typed queries, real migrations |
 | State | `flutter_riverpod` |
 | Charts | `fl_chart` |
-| Timers / audio | `audioplayers`, `wakelock_plus`, `flutter_local_notifications` |
+| Timers / audio | `audioplayers`, `wakelock_plus` |
 | Platform | Android **and** iOS |
 | Units | Store SI, display metric or imperial — **imperial is the default** |
 | Height | One-time profile setting, not a time series |
@@ -636,7 +636,7 @@ consecutive-failure counting, the hinge pattern across a multi-week run, and
 lb↔kg round-tripping across repeated increments.*
 
 **Phase 3 — Timers & warmup.** Riverpod session stopwatch and rest countdowns,
-`audioplayers` cues, `wakelock_plus`, local notifications, iOS audio session.
+`audioplayers` cues, `wakelock_plus`, iOS audio session.
 Warmup screen. *Tests: timer state machine with a fake clock.*
 
 **Phase 4 — Active workout.** Guided pair/triplet flow, set logging with
@@ -722,10 +722,14 @@ Nothing is left assumed.
   decrementing. A backgrounded phone delivers one late tick instead of many on
   time; a decrementing rest timer would silently stretch by however long the
   screen was off.
-- **Rest notifications are scheduled at the deadline**, not fired by a Dart
-  timer, because a backgrounded isolate is not guaranteed to run. They are
-  cancelled when the rest is skipped, paused, or completes with the app in
-  front of the user, so the chime and the notification never double up.
+- **Scheduled rest notifications were removed.** A rest is 60-90s. An
+  inexact Android alarm can be deferred by minutes — worse than useless at
+  that scale — and an exact one costs a revocable runtime permission, a
+  `SCHEDULE_EXACT_ALARM` manifest entry, core-library desugaring, and a Play
+  Store justification. The chime, the haptic and the held-awake screen cover
+  the foreground case, which is the only one that was ever reliable. Leaving
+  the app mid-rest now gets no alert, deliberately. This removed
+  `flutter_local_notifications` and `timezone` entirely.
 - **Skipping a rest is silent.** The user just said they were moving on;
   chiming would tell them something they told us.
 - **Extending a finished timer starts a fresh run** rather than reviving a
