@@ -164,4 +164,102 @@ class AppDatabase extends _$AppDatabase {
   Future<WorkoutSession?> get inProgressSession =>
       (select(workoutSessions)..where((s) => s.status.equals('in_progress')))
           .getSingleOrNull();
+
+  Stream<WorkoutSession?> watchInProgressSession() =>
+      (select(workoutSessions)..where((s) => s.status.equals('in_progress')))
+          .watchSingleOrNull();
+
+  /// Opens a session. Written at *start*, with `status = in_progress`, so a
+  /// crash mid-workout leaves the already-logged sets attached to something.
+  Future<void> startSession({
+    required String id,
+    required DateTime startedAt,
+    required int rotationIndex,
+    required int pairRestSeconds,
+    required int tripletRestSeconds,
+    required String cursorJson,
+  }) async {
+    await into(workoutSessions).insert(
+      WorkoutSessionsCompanion.insert(
+        id: id,
+        startedAt: startedAt,
+        status: 'in_progress',
+        rotationIndex: rotationIndex,
+        pairRestSeconds: pairRestSeconds,
+        tripletRestSeconds: tripletRestSeconds,
+        cursorJson: Value(cursorJson),
+      ),
+    );
+  }
+
+  /// Persisted after every logged set and every skip, so resume is exact
+  /// rather than approximate.
+  Future<void> saveCursor(String sessionId, String cursorJson) async {
+    await (update(workoutSessions)..where((s) => s.id.equals(sessionId)))
+        .write(WorkoutSessionsCompanion(cursorJson: Value(cursorJson)));
+  }
+
+  /// Closes a session as completed or abandoned.
+  ///
+  /// The cursor is cleared either way: it only means "where to resume", and a
+  /// finished session has nowhere to resume to.
+  Future<void> closeSession(
+    String sessionId, {
+    required String status,
+    required DateTime endedAt,
+  }) async {
+    await (update(workoutSessions)..where((s) => s.id.equals(sessionId))).write(
+      WorkoutSessionsCompanion(
+        status: Value(status),
+        endedAt: Value(endedAt),
+        cursorJson: const Value(null),
+      ),
+    );
+  }
+
+  Future<void> logSet(SetRecordsCompanion record) =>
+      into(setRecords).insertOnConflictUpdate(record);
+
+  Future<void> deleteSet(String id) async {
+    await (delete(setRecords)..where((s) => s.id.equals(id))).go();
+  }
+
+  Future<List<SetRecord>> setsForSession(String sessionId) =>
+      (select(setRecords)
+            ..where((s) => s.sessionId.equals(sessionId))
+            ..orderBy([(s) => OrderingTerm(expression: s.recordedAt)]))
+          .get();
+
+  Stream<List<SetRecord>> watchSetsForSession(String sessionId) =>
+      (select(setRecords)
+            ..where((s) => s.sessionId.equals(sessionId))
+            ..orderBy([(s) => OrderingTerm(expression: s.recordedAt)]))
+          .watch();
+
+  /// The sets logged for [exerciseId] in the most recent session that
+  /// contains it — not simply the last N rows, which would blend two sessions
+  /// together when the previous one was cut short.
+  ///
+  /// Drives the pre-filled targets: what the user managed last time is the
+  /// best guess at what they will manage now.
+  Future<List<SetRecord>> lastSessionSets(
+    String exerciseId, {
+    String? excludingSessionId,
+  }) async {
+    final query = select(setRecords)
+      ..where((s) => s.exerciseId.equals(exerciseId))
+      ..orderBy([
+        (s) => OrderingTerm(expression: s.recordedAt, mode: OrderingMode.desc),
+      ]);
+    if (excludingSessionId != null) {
+      query.where((s) => s.sessionId.equals(excludingSessionId).not());
+    }
+
+    final rows = await query.get();
+    if (rows.isEmpty) return const [];
+
+    final sessionId = rows.first.sessionId;
+    return rows.where((r) => r.sessionId == sessionId).toList()
+      ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+  }
 }
