@@ -90,6 +90,14 @@ class ExerciseStates extends Table {
   RealColumn get lastIncrementKg => real().nullable()();
 
   IntColumn get consecutiveFailures => integer().withDefault(const Constant(0))();
+
+  /// When the user topped out a bodyweight branch here — maxed the rep scheme
+  /// with no harder exercise to move to and no weight to add.
+  ///
+  /// Exists so the congratulation fires once instead of every session. Null
+  /// means it has not been shown.
+  DateTimeColumn get masteredAt => dateTime().nullable()();
+
   DateTimeColumn get updatedAt => dateTime()();
 
   @override

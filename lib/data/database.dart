@@ -33,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -49,6 +49,9 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(workoutSessions);
             await m.createTable(setRecords);
             await _createIndexes(m);
+          }
+          if (from < 3) {
+            await m.addColumn(exerciseStates, exerciseStates.masteredAt);
           }
         },
         beforeOpen: (details) async {
@@ -131,6 +134,7 @@ class AppDatabase extends _$AppDatabase {
     double? workingLoadKg,
     double? lastIncrementKg,
     int? consecutiveFailures,
+    DateTime? masteredAt,
     DateTime? now,
   }) async {
     await into(exerciseStates).insertOnConflictUpdate(
@@ -139,6 +143,7 @@ class AppDatabase extends _$AppDatabase {
         workingLoadKg: Value.absentIfNull(workingLoadKg),
         lastIncrementKg: Value.absentIfNull(lastIncrementKg),
         consecutiveFailures: Value.absentIfNull(consecutiveFailures),
+        masteredAt: Value.absentIfNull(masteredAt),
         updatedAt: now ?? DateTime.now(),
       ),
     );

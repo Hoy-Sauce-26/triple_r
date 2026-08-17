@@ -716,6 +716,30 @@ Nothing is left assumed.
 - Rotation made an optional setting and flagged as non-RR.
 - Tests in every phase; Phase 0 skeleton added.
 
+**Added during Phase 2 implementation**
+
+- **Branch-end mastery.** The advancement rule had no answer for the ~24
+  exercises that are terminal on a bodyweight branch — no harder exercise and
+  no load. They now produce a one-time congratulation, which required a
+  nullable `mastered_at` on `exercise_state` (schema v3) so it does not repeat
+  every session.
+- `weighted_shrimp_squats` switched to `ProgressionMode.load` — it is the
+  weighted variant at the end of the default squat branch, so it should add
+  load like Weighted Pull-ups / Dips / Rows do at the ends of theirs.
+- **Metric beats slot** when choosing a rep scheme: timed holds use 30–60s
+  wherever they sit, so a path can change schemes partway (Parallel Bar
+  Support Hold opens the dip path on time, the rest of it runs on reps).
+- **Incomplete exercises evaluate to nothing.** Fewer than three logged sets
+  is neither success nor failure and does not touch the failure counter —
+  otherwise a skipped exercise or a short day pushes the user backwards.
+- **Failing at the easiest exercise keeps counting** rather than resetting.
+  There is nothing to regress to, but zeroing the counter would claim the
+  session went fine.
+- **No rounding during load arithmetic.** §2.2.1 called for rounding to a
+  0.5 lb grid; doing that mid-calculation destroys the 1.25 lb micro-loading
+  the same section calls out. Rounding happens only when formatting for
+  display.
+
 **Corrected during Phase 1 implementation**
 
 - `perSide` split out of `Metric` — the three-valued enum could not represent

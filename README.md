@@ -11,12 +11,25 @@ No account, no ads, no backend — everything lives on the device.
 
 ## Status
 
-**Phase 0 — skeleton.** Project scaffold, theme, navigation shell, and the
-drift database wired up with a host-VM test harness. The nine progression
-paths, the workout engine, and the charts are not built yet; tabs that are
-still empty say which phase fills them in.
+**Phase 2 — progression logic.** Schema, the nine progression trees, the
+Progression Config screen, and the rules engine: rep schemes, advancement and
+regression, load arithmetic, session rotation, and warmup gating. The workout
+screens, timers, and charts are not built yet; tabs that are still empty say
+which phase fills them in.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the full spec and phase roadmap.
+
+## Layout
+
+| Directory | Holds |
+| --- | --- |
+| `lib/trees/` | The nine progression trees as typed constants, plus branch-gating rules |
+| `lib/domain/` | Pure logic: rep schemes, advance/regress evaluation, units, session planning |
+| `lib/data/` | drift database, tables, migrations |
+| `lib/screens/` | UI |
+
+`lib/domain/` and `lib/trees/` have no Flutter dependency beyond types, which
+is why the rules can be tested exhaustively without a widget tree.
 
 ## Architecture
 
@@ -58,6 +71,14 @@ flutter test
 > test fails on `!timersPending`. End such tests with `disposeApp(tester)` —
 > and note it pumps `Duration.zero` rather than a bare `pump()`, because
 > `pump()` with no argument does not advance the fake clock at all.
+
+> **Riverpod 3 auto-disposes providers with no listeners.** In a bare
+> `ProviderContainer` test, `read(provider.future)` can tear the element down
+> before the underlying stream emits, and the future never completes — it
+> presents as a 30-second timeout, not an error. Hold a subscription with
+> `container.listen(provider, (_, _) {})` first. After a write, pump the event
+> queue rather than re-reading `.future`, which completed on the first value
+> and hands back the stale one.
 
 > A failing widget test prints a stack trace per failure, which is enough
 > output to get the runner killed before it reports. Filter to progress lines

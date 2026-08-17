@@ -1107,6 +1107,17 @@ class $ExerciseStatesTable extends ExerciseStates
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _masteredAtMeta = const VerificationMeta(
+    'masteredAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> masteredAt = GeneratedColumn<DateTime>(
+    'mastered_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -1124,6 +1135,7 @@ class $ExerciseStatesTable extends ExerciseStates
     workingLoadKg,
     lastIncrementKg,
     consecutiveFailures,
+    masteredAt,
     updatedAt,
   ];
   @override
@@ -1173,6 +1185,12 @@ class $ExerciseStatesTable extends ExerciseStates
         ),
       );
     }
+    if (data.containsKey('mastered_at')) {
+      context.handle(
+        _masteredAtMeta,
+        masteredAt.isAcceptableOrUnknown(data['mastered_at']!, _masteredAtMeta),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -1206,6 +1224,10 @@ class $ExerciseStatesTable extends ExerciseStates
         DriftSqlType.int,
         data['${effectivePrefix}consecutive_failures'],
       )!,
+      masteredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}mastered_at'],
+      ),
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
@@ -1231,12 +1253,20 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
   /// Deliberately not a setting — see `docs/PLAN.md` §2.2.1.
   final double? lastIncrementKg;
   final int consecutiveFailures;
+
+  /// When the user topped out a bodyweight branch here — maxed the rep scheme
+  /// with no harder exercise to move to and no weight to add.
+  ///
+  /// Exists so the congratulation fires once instead of every session. Null
+  /// means it has not been shown.
+  final DateTime? masteredAt;
   final DateTime updatedAt;
   const ExerciseState({
     required this.exerciseId,
     required this.workingLoadKg,
     this.lastIncrementKg,
     required this.consecutiveFailures,
+    this.masteredAt,
     required this.updatedAt,
   });
   @override
@@ -1248,6 +1278,9 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
       map['last_increment_kg'] = Variable<double>(lastIncrementKg);
     }
     map['consecutive_failures'] = Variable<int>(consecutiveFailures);
+    if (!nullToAbsent || masteredAt != null) {
+      map['mastered_at'] = Variable<DateTime>(masteredAt);
+    }
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
@@ -1260,6 +1293,9 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
           ? const Value.absent()
           : Value(lastIncrementKg),
       consecutiveFailures: Value(consecutiveFailures),
+      masteredAt: masteredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(masteredAt),
       updatedAt: Value(updatedAt),
     );
   }
@@ -1276,6 +1312,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
       consecutiveFailures: serializer.fromJson<int>(
         json['consecutiveFailures'],
       ),
+      masteredAt: serializer.fromJson<DateTime?>(json['masteredAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
@@ -1287,6 +1324,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
       'workingLoadKg': serializer.toJson<double>(workingLoadKg),
       'lastIncrementKg': serializer.toJson<double?>(lastIncrementKg),
       'consecutiveFailures': serializer.toJson<int>(consecutiveFailures),
+      'masteredAt': serializer.toJson<DateTime?>(masteredAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
@@ -1296,6 +1334,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
     double? workingLoadKg,
     Value<double?> lastIncrementKg = const Value.absent(),
     int? consecutiveFailures,
+    Value<DateTime?> masteredAt = const Value.absent(),
     DateTime? updatedAt,
   }) => ExerciseState(
     exerciseId: exerciseId ?? this.exerciseId,
@@ -1304,6 +1343,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
         ? lastIncrementKg.value
         : this.lastIncrementKg,
     consecutiveFailures: consecutiveFailures ?? this.consecutiveFailures,
+    masteredAt: masteredAt.present ? masteredAt.value : this.masteredAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   ExerciseState copyWithCompanion(ExerciseStatesCompanion data) {
@@ -1320,6 +1360,9 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
       consecutiveFailures: data.consecutiveFailures.present
           ? data.consecutiveFailures.value
           : this.consecutiveFailures,
+      masteredAt: data.masteredAt.present
+          ? data.masteredAt.value
+          : this.masteredAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -1331,6 +1374,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
           ..write('workingLoadKg: $workingLoadKg, ')
           ..write('lastIncrementKg: $lastIncrementKg, ')
           ..write('consecutiveFailures: $consecutiveFailures, ')
+          ..write('masteredAt: $masteredAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -1342,6 +1386,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
     workingLoadKg,
     lastIncrementKg,
     consecutiveFailures,
+    masteredAt,
     updatedAt,
   );
   @override
@@ -1352,6 +1397,7 @@ class ExerciseState extends DataClass implements Insertable<ExerciseState> {
           other.workingLoadKg == this.workingLoadKg &&
           other.lastIncrementKg == this.lastIncrementKg &&
           other.consecutiveFailures == this.consecutiveFailures &&
+          other.masteredAt == this.masteredAt &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -1360,6 +1406,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
   final Value<double> workingLoadKg;
   final Value<double?> lastIncrementKg;
   final Value<int> consecutiveFailures;
+  final Value<DateTime?> masteredAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const ExerciseStatesCompanion({
@@ -1367,6 +1414,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
     this.workingLoadKg = const Value.absent(),
     this.lastIncrementKg = const Value.absent(),
     this.consecutiveFailures = const Value.absent(),
+    this.masteredAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1375,6 +1423,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
     this.workingLoadKg = const Value.absent(),
     this.lastIncrementKg = const Value.absent(),
     this.consecutiveFailures = const Value.absent(),
+    this.masteredAt = const Value.absent(),
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
   }) : exerciseId = Value(exerciseId),
@@ -1384,6 +1433,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
     Expression<double>? workingLoadKg,
     Expression<double>? lastIncrementKg,
     Expression<int>? consecutiveFailures,
+    Expression<DateTime>? masteredAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
@@ -1393,6 +1443,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
       if (lastIncrementKg != null) 'last_increment_kg': lastIncrementKg,
       if (consecutiveFailures != null)
         'consecutive_failures': consecutiveFailures,
+      if (masteredAt != null) 'mastered_at': masteredAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1403,6 +1454,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
     Value<double>? workingLoadKg,
     Value<double?>? lastIncrementKg,
     Value<int>? consecutiveFailures,
+    Value<DateTime?>? masteredAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
@@ -1411,6 +1463,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
       workingLoadKg: workingLoadKg ?? this.workingLoadKg,
       lastIncrementKg: lastIncrementKg ?? this.lastIncrementKg,
       consecutiveFailures: consecutiveFailures ?? this.consecutiveFailures,
+      masteredAt: masteredAt ?? this.masteredAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -1431,6 +1484,9 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
     if (consecutiveFailures.present) {
       map['consecutive_failures'] = Variable<int>(consecutiveFailures.value);
     }
+    if (masteredAt.present) {
+      map['mastered_at'] = Variable<DateTime>(masteredAt.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
@@ -1447,6 +1503,7 @@ class ExerciseStatesCompanion extends UpdateCompanion<ExerciseState> {
           ..write('workingLoadKg: $workingLoadKg, ')
           ..write('lastIncrementKg: $lastIncrementKg, ')
           ..write('consecutiveFailures: $consecutiveFailures, ')
+          ..write('masteredAt: $masteredAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -3208,6 +3265,7 @@ typedef $$ExerciseStatesTableCreateCompanionBuilder =
       Value<double> workingLoadKg,
       Value<double?> lastIncrementKg,
       Value<int> consecutiveFailures,
+      Value<DateTime?> masteredAt,
       required DateTime updatedAt,
       Value<int> rowid,
     });
@@ -3217,6 +3275,7 @@ typedef $$ExerciseStatesTableUpdateCompanionBuilder =
       Value<double> workingLoadKg,
       Value<double?> lastIncrementKg,
       Value<int> consecutiveFailures,
+      Value<DateTime?> masteredAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
@@ -3247,6 +3306,11 @@ class $$ExerciseStatesTableFilterComposer
 
   ColumnFilters<int> get consecutiveFailures => $composableBuilder(
     column: $table.consecutiveFailures,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3285,6 +3349,11 @@ class $$ExerciseStatesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -3317,6 +3386,11 @@ class $$ExerciseStatesTableAnnotationComposer
 
   GeneratedColumn<int> get consecutiveFailures => $composableBuilder(
     column: $table.consecutiveFailures,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
     builder: (column) => column,
   );
 
@@ -3361,6 +3435,7 @@ class $$ExerciseStatesTableTableManager
                 Value<double> workingLoadKg = const Value.absent(),
                 Value<double?> lastIncrementKg = const Value.absent(),
                 Value<int> consecutiveFailures = const Value.absent(),
+                Value<DateTime?> masteredAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ExerciseStatesCompanion(
@@ -3368,6 +3443,7 @@ class $$ExerciseStatesTableTableManager
                 workingLoadKg: workingLoadKg,
                 lastIncrementKg: lastIncrementKg,
                 consecutiveFailures: consecutiveFailures,
+                masteredAt: masteredAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
@@ -3377,6 +3453,7 @@ class $$ExerciseStatesTableTableManager
                 Value<double> workingLoadKg = const Value.absent(),
                 Value<double?> lastIncrementKg = const Value.absent(),
                 Value<int> consecutiveFailures = const Value.absent(),
+                Value<DateTime?> masteredAt = const Value.absent(),
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
               }) => ExerciseStatesCompanion.insert(
@@ -3384,6 +3461,7 @@ class $$ExerciseStatesTableTableManager
                 workingLoadKg: workingLoadKg,
                 lastIncrementKg: lastIncrementKg,
                 consecutiveFailures: consecutiveFailures,
+                masteredAt: masteredAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
