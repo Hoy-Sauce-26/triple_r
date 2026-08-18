@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Shared with Roamfree (`../step_counter`). The two apps are siblings and are
 /// meant to read as one family, so the seed is deliberately identical.
-const seedColor = Color(0xFFFFC067);
+const seedColor = Color(0xFF67FF7B);
 
 ThemeData _theme(Brightness brightness) {
   final colors = ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
