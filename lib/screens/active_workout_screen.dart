@@ -11,6 +11,7 @@ import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/tree_types.dart';
+import '../widgets/number_entry_dialog.dart';
 import 'session_summary_screen.dart';
 
 /// The guided workout: one set at a time, with the rest timer between.
@@ -295,37 +296,17 @@ class _LoggedSets extends ConsumerWidget {
     SetRecord record,
   ) async {
     final timed = record.holdSeconds != null;
-    final controller = TextEditingController(
-      text: '${record.holdSeconds ?? record.repsCompleted ?? 0}',
-    );
 
-    final corrected = await showDialog<int>(
+    final text = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Set ${record.setIndex}'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            labelText: timed ? 'Seconds' : 'Reps',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(context, int.tryParse(controller.text)),
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (_) => NumberEntryDialog(
+        title: 'Set ${record.setIndex}',
+        initialText: '${record.holdSeconds ?? record.repsCompleted ?? 0}',
+        labelText: timed ? 'Seconds' : 'Reps',
       ),
     );
 
+    final corrected = text == null ? null : int.tryParse(text);
     if (corrected == null) return;
     await ref.read(activeSessionProvider.notifier).editSet(
           pathId: pathId,

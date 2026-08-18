@@ -7,6 +7,7 @@ import '../domain/backup.dart';
 import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
+import '../widgets/number_entry_dialog.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -109,40 +110,20 @@ class SettingsScreen extends ConsumerWidget {
     UnitSystem units,
   ) async {
     final imperial = units == UnitSystem.imperial;
-    final controller = TextEditingController(
-      text: current == null
-          ? ''
-          : (imperial ? current / 2.54 : current).toStringAsFixed(0),
-    );
 
-    final entered = await showDialog<double>(
+    final text = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Height'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            suffixText: imperial ? 'in' : 'cm',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext)
-                .pop(double.tryParse(controller.text.trim())),
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (_) => NumberEntryDialog(
+        title: 'Height',
+        initialText: current == null
+            ? ''
+            : (imperial ? current / 2.54 : current).toStringAsFixed(0),
+        suffixText: imperial ? 'in' : 'cm',
+        decimal: true,
       ),
     );
-    controller.dispose();
 
+    final entered = text == null ? null : double.tryParse(text);
     if (entered == null || entered <= 0) return;
     await ref.read(databaseProvider).updateProfile(
           UserProfilesCompanion(
