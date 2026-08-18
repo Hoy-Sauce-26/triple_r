@@ -73,6 +73,14 @@ class DashboardScreen extends ConsumerWidget {
               ),
             ),
           ),
+          // Below the plan, not above it. Placed first, this pushed "Begin
+          // workout" past the fold on a small screen — guidance must never
+          // displace the primary action it is explaining.
+          if (active == null &&
+              ref.watch(completedSessionCountProvider).value == 0) ...[
+            const SizedBox(height: 12),
+            const _FirstRunCard(),
+          ],
         ],
       ),
     );
@@ -111,6 +119,58 @@ Future<void> _resumeWorkout(BuildContext context, WidgetRef ref) async {
 }
 
 /// Offered when an `in_progress` session is found on launch.
+/// One-time orientation for a fresh install.
+///
+/// Triple R starts every path at its easiest exercise, which is the right
+/// default but is wrong for most people — someone who can already do pull-ups
+/// should not spend their first session on scapular pulls. This says so once,
+/// then never again.
+class _FirstRunCard extends StatelessWidget {
+  const _FirstRunCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.waving_hand_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'First time here',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Every progression starts at its easiest step. If some of them '
+              'are already easy for you, set where you are on the Progression '
+              'tab first — otherwise just begin, and the app will move you up '
+              'as you hit your targets.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ResumeBanner extends ConsumerWidget {
   const _ResumeBanner({required this.startedAt});
 
