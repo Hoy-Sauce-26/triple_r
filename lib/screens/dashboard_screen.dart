@@ -43,6 +43,11 @@ class DashboardScreen extends ConsumerWidget {
                       'Workout ${plan.rotationIndex + 1} of 3',
                       style: theme.textTheme.headlineSmall,
                     ),
+                    if (ref.watch(profileProvider).value?.rotatePairOrder ??
+                        false) ...[
+                      const SizedBox(height: 12),
+                      _WorkoutPicker(selected: plan.rotationIndex),
+                    ],
                     const SizedBox(height: 12),
                     for (final (index, pair) in plan.pairs.indexed)
                       _PlanRow(
@@ -108,6 +113,39 @@ Future<void> _beginWorkout(BuildContext context, WidgetRef ref) async {
   // time is derived from `startedAt`, so resuming picks up the true total.
   ref.read(sessionClockProvider.notifier).stop();
   ref.read(warmupChecklistProvider.notifier).clear();
+  // A hand-picked workout applies to the one just started, not to the next
+  // one — the rotation takes over again from here.
+  ref.read(selectedRotationProvider.notifier).clear();
+}
+
+/// Lets the user start a workout other than the one the rotation is due.
+///
+/// The rotation is derived from the completed count, so it silently assumes
+/// every session got logged. Someone who trained and forgot had no way to say
+/// so, and would be handed the same order twice.
+class _WorkoutPicker extends ConsumerWidget {
+  const _WorkoutPicker({required this.selected});
+
+  final int selected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<int>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: 0, label: Text('1')),
+          ButtonSegment(value: 1, label: Text('2')),
+          ButtonSegment(value: 2, label: Text('3')),
+        ],
+        selected: {selected},
+        onSelectionChanged: (values) => ref
+            .read(selectedRotationProvider.notifier)
+            .select(values.first),
+      ),
+    );
+  }
 }
 
 /// Picks up a workout that was interrupted.

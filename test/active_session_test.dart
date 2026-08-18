@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:triple_r/data/database.dart';
 import 'package:triple_r/domain/progression.dart';
 import 'package:triple_r/domain/units.dart';
+import 'package:triple_r/domain/workout_steps.dart';
 import 'package:triple_r/providers.dart';
 import 'package:triple_r/services/alerts.dart';
 import 'package:triple_r/services/clock.dart';
@@ -18,19 +19,23 @@ void main() {
   late FakeTicker ticker;
   late ProviderContainer container;
 
+  /// A container over the same fakes — used to simulate the app being killed
+  /// and reopened onto an in-progress session.
+  ProviderContainer freshContainer() => ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          clockProvider.overrideWithValue(clock),
+          tickerProvider.overrideWithValue(ticker),
+          alertsProvider.overrideWithValue(RecordingAlerts()),
+          screenWakeProvider.overrideWithValue(FakeScreenWake()),
+        ],
+      );
+
   setUp(() {
     db = AppDatabase.memory();
     clock = FakeClock();
     ticker = FakeTicker();
-    container = ProviderContainer(
-      overrides: [
-        databaseProvider.overrideWithValue(db),
-        clockProvider.overrideWithValue(clock),
-        tickerProvider.overrideWithValue(ticker),
-        alertsProvider.overrideWithValue(RecordingAlerts()),
-        screenWakeProvider.overrideWithValue(FakeScreenWake()),
-      ],
-    );
+    container = freshContainer();
     // Riverpod 3 auto-disposes unlistened providers; without a subscription
     // the notifier is torn down between awaits.
     container.listen(activeSessionProvider, (_, _) {});
@@ -497,6 +502,43 @@ void main() {
         isA<MasteredOutcome>(),
       );
       expect((await db.exerciseState('pistol_squats'))!.masteredAt, isNotNull);
+    });
+  });
+
+  group('resuming keeps the session it started as', () {
+    test('the alternating hinge lift survives a resume', () async {
+      // The stored rotation index is 0-2; it was being passed where a session
+      // number belongs, so a resumed workout could compute the hinge lift
+      // from 1 when the session had started life as number 4 — and the
+      // barbell rotation would swap under a user mid-workout.
+      await db.saveProgressionConfig(
+        pathId: 'hinge',
+        branchId: 'barbell',
+        exerciseId: null,
+      );
+      for (var i = 0; i < 4; i++) {
+        await db.startSession(
+          id: 'done-$i',
+          startedAt: clock.now(),
+          rotationIndex: i % 3,
+          pairRestSeconds: 90,
+          tripletRestSeconds: 60,
+          cursorJson: const SessionCursor().encode(),
+        );
+        await db.closeSession('done-$i',
+            status: 'completed', endedAt: clock.now());
+      }
+
+      await container.read(activeSessionProvider.notifier).start();
+      final atStart =
+          container.read(activeSessionProvider).value!.exerciseByPath['hinge'];
+
+      // A fresh controller, as after the app is killed and reopened.
+      final resumed = freshContainer();
+      addTearDown(resumed.dispose);
+      final session = await resumed.read(activeSessionProvider.future);
+
+      expect(session!.exerciseByPath['hinge'], atStart);
     });
   });
 }

@@ -106,6 +106,53 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('the user can start a workout the rotation is not due',
+      (tester) async {
+    // The rotation assumes every session was logged. Someone who trained and
+    // forgot had no way to say so and would be handed the same order twice.
+    await pumpApp(tester);
+    expect(find.text('Workout 1 of 3'), findsOneWidget);
+    expect(find.textContaining('Scapular Pulls'), findsOneWidget);
+
+    await tester.tap(find.text('2'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Workout 2 of 3'), findsOneWidget);
+    // Rotation 1 opens on Pair 2, so the preview leads with the dip path.
+    expect(find.textContaining('Parallel Bar Support Hold'), findsOneWidget);
+
+    await tester.tap(find.text('Begin workout'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip to workout'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pair 1 · set 1 of 3'), findsOneWidget);
+    expect(find.text('Parallel Bar Support Hold'), findsOneWidget,
+        reason: 'the chosen order is what actually runs');
+
+    final row = await db.inProgressSession;
+    expect(row!.rotationIndex, 1);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the hand-picked workout does not stick around', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('3'));
+    await tester.pumpAndSettle();
+    expect(find.text('Workout 3 of 3'), findsOneWidget);
+
+    await tester.tap(find.text('Begin workout'));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // Back to whatever the rotation says, not stuck on the override.
+    expect(find.text('Workout 1 of 3'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('the session clock and wakelock survive the warmup handoff',
       (tester) async {
     // The regression this file exists for. The warmup used to

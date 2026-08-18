@@ -4,6 +4,7 @@ import 'package:triple_r/trees/paths.dart';
 import 'package:triple_r/trees/tree_rules.dart';
 
 void main() {
+  _rotationChoiceTests();
   SessionPlan plan(
     int completed, {
     bool rotate = true,
@@ -201,6 +202,48 @@ void main() {
         ),
         'barbell_deadlift',
       );
+    });
+  });
+}
+
+void _rotationChoiceTests() {
+  group('sessionOrdinalForRotation', () {
+    test('the auto choice is the session you are already on', () {
+      for (var completed = 0; completed < 9; completed++) {
+        final auto = rotationIndexFor(completed, rotatePairOrder: true);
+        expect(
+          sessionOrdinalForRotation(completed, auto, rotatePairOrder: true),
+          completed,
+        );
+      }
+    });
+
+    test('skipping ahead lands on the next session running that order', () {
+      // Four done, so the next is session 4 running order 1. Choosing order 2
+      // claims session 5 — one further on, which advances the hinge too.
+      expect(sessionOrdinalForRotation(4, 1, rotatePairOrder: true), 4);
+      expect(sessionOrdinalForRotation(4, 2, rotatePairOrder: true), 5);
+      expect(sessionOrdinalForRotation(4, 0, rotatePairOrder: true), 6);
+    });
+
+    test('the implied session always runs the chosen order', () {
+      for (var completed = 0; completed < 12; completed++) {
+        for (var choice = 0; choice < 3; choice++) {
+          final ordinal =
+              sessionOrdinalForRotation(completed, choice, rotatePairOrder: true);
+          expect(
+            rotationIndexFor(ordinal, rotatePairOrder: true),
+            choice,
+            reason: 'completed=$completed choice=$choice',
+          );
+          expect(ordinal, greaterThanOrEqualTo(completed));
+          expect(ordinal, lessThan(completed + 3));
+        }
+      }
+    });
+
+    test('rotation turned off pins to the real count', () {
+      expect(sessionOrdinalForRotation(7, 2, rotatePairOrder: false), 7);
     });
   });
 }

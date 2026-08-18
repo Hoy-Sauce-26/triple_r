@@ -106,7 +106,10 @@ void main() {
     expect(exercises, hasLength(9));
     expect(exercises['pushup'], 'wall_pushups');
     expect(exercises['squat'], 'assisted_squats');
-    expect(exercises['antirotation'], 'ring_pallof_press');
+    // The two core paths with no trunk default to Option A of the source
+    // routine rather than to whichever branch happened to be listed first.
+    expect(exercises['antirotation'], 'pallof_press');
+    expect(exercises['extension'], 'reverse_hyperextensions');
   });
 
   test('the alternating hinge branch picks its lift from the session count',

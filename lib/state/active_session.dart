@@ -95,6 +95,19 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
   /// workout the user is halfway through.
   Future<ActiveSession> _hydrate(WorkoutSession row) async {
     final positions = await _positions();
+    final profile = await _db.profile;
+
+    // Reconstructed rather than stored. The ordinal is pinned down by the
+    // saved rotation and the completed count together: it is the only session
+    // at or after the count that runs this order, and the count cannot have
+    // moved while this session is still open. Passing `row.rotationIndex`
+    // here — a 0-2 index standing in for a session number — used to swap the
+    // alternating hinge lift out from under a resumed workout.
+    final ordinal = sessionOrdinalForRotation(
+      await _db.completedSessionCount(),
+      row.rotationIndex,
+      rotatePairOrder: profile.rotatePairOrder,
+    );
     final plan = SessionPlan(
       rotationIndex: row.rotationIndex,
       pairs: pairRotations[row.rotationIndex],
@@ -108,7 +121,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
       plan: plan,
       steps: buildSteps(plan),
       cursor: SessionCursor.decode(row.cursorJson),
-      exerciseByPath: _resolveExercises(positions, row.rotationIndex),
+      exerciseByPath: _resolveExercises(positions, ordinal),
       pairRestSeconds: row.pairRestSeconds,
       tripletRestSeconds: row.tripletRestSeconds,
     );
@@ -152,8 +165,12 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     final completed = await _db.completedSessionCount();
     final positions = await _positions();
 
+    // The session this workout *is*, which the picked workout may put ahead
+    // of the completed count — someone who trained yesterday without logging
+    // it is on the next session, not the one the count still thinks.
+    final ordinal = ref.read(plannedSessionOrdinalProvider) ?? completed;
     final rotationIndex = rotationIndexFor(
-      completed,
+      ordinal,
       rotatePairOrder: profile.rotatePairOrder,
     );
     final plan = SessionPlan(
@@ -186,9 +203,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
       plan: plan,
       steps: buildSteps(plan),
       cursor: cursor,
-      // The hinge pattern indexes by how many sessions are already done, so
-      // this session is number `completed`.
-      exerciseByPath: _resolveExercises(positions, completed),
+      exerciseByPath: _resolveExercises(positions, ordinal),
       pairRestSeconds: profile.defaultPairRestSeconds,
       tripletRestSeconds: profile.defaultTripletRestSeconds,
     ));

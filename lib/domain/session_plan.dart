@@ -58,6 +58,30 @@ int rotationIndexFor(int completedSessions, {required bool rotatePairOrder}) {
   return completedSessions.remainder(pairRotations.length).abs();
 }
 
+/// The session number implied by choosing rotation [rotationIndex].
+///
+/// The rotation is a function of how many sessions are done, so picking a
+/// workout out of order is really a claim about *which session this is*: a
+/// user who trained yesterday without logging it is on the next one, not the
+/// one the count still thinks. This returns the soonest session at or after
+/// [completedSessions] that runs the chosen order.
+///
+/// Using it for the alternating hinge as well as the pair order keeps the two
+/// consistent — skipping ahead a session advances the barbell rotation by one,
+/// which is what actually happened.
+int sessionOrdinalForRotation(
+  int completedSessions,
+  int rotationIndex, {
+  required bool rotatePairOrder,
+}) {
+  // With rotation off every session runs order 0, so there is nothing to
+  // choose and nothing to infer.
+  if (!rotatePairOrder) return completedSessions;
+  final n = pairRotations.length;
+  final current = completedSessions.remainder(n).abs();
+  return completedSessions + (rotationIndex - current) % n;
+}
+
 /// Warmup items the user has unlocked. The last four exist to prepare a
 /// movement they cannot do yet, so they appear only once reached.
 List<WarmupItem> warmupFor(Set<String> reachedExerciseIds) => [

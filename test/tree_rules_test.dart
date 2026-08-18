@@ -69,63 +69,36 @@ void main() {
     });
   });
 
-  group('branch gating', () {
+  group('routes are never gated on level', () {
     final squat = pathById('squat');
 
-    test('step-up and pistol are locked at the start of the squat path', () {
-      final positions = freshPositions();
-      for (final id in ['stepup', 'pistol']) {
-        expect(
-          branchLock(squat, squat.branchById(id)!, positions),
-          BranchLockReason.notYetReached,
-          reason: id,
-        );
-      }
-    });
-
-    test('they unlock once the user reaches Bulgarian Split Squats', () {
-      final positions =
-          withPosition('squat', 'bodyweight', 'bulgarian_split_squats');
-      for (final id in ['stepup', 'pistol']) {
-        expect(branchLock(squat, squat.branchById(id)!, positions), isNull,
-            reason: id);
-      }
-    });
-
-    test('the default branch is never locked, even below its own fork', () {
-      // Squat's default branch forks at 3, but a beginner sits at level 1 on
-      // it. Locking it would disable the dropdown's own current value.
-      final positions = freshPositions();
-      expect(branchLock(squat, squat.branchById('bodyweight')!, positions), isNull);
-    });
-
-    test('a non-default branch still waits for its fork level', () {
+    // Gating was removed outright. Someone installing the app who can already
+    // do pistol squats has to be able to say so on day one; making them walk
+    // the current-exercise list upward first to unlock the route is a puzzle,
+    // not a safeguard.
+    test('a route forking above the user is still selectable', () {
       final positions = freshPositions();
       expect(
-        branchLock(squat, squat.branchById('barbell')!, positions),
-        BranchLockReason.notYetReached,
+        handstandConflict(squat, squat.branchById('pistol')!, positions),
+        isNull,
       );
-
-      final afterFullSquats = withPosition('squat', 'bodyweight', 'full_squats');
       expect(
-        branchLock(squat, squat.branchById('barbell')!, afterFullSquats),
+        handstandConflict(squat, squat.branchById('barbell')!, positions),
         isNull,
       );
     });
 
-    test('the branch the user is on stays selectable', () {
-      // Reachable only by having travelled there, so it must not re-lock.
-      final positions = withPosition('squat', 'pistol', 'pistol_squats');
-      expect(branchLock(squat, squat.branchById('pistol')!, positions), isNull);
+    test('switching to it lands on its own first exercise', () {
+      final next = positionAfterSwitch(squat, squat.branchById('pistol')!);
+      expect(next.exerciseId, 'partial_pistol_squats');
     });
   });
 
-  group('handstand push-up mutual exclusion', () {
+  group('handstand mutual exclusion', () {
     final dip = pathById('dip');
     final pushup = pathById('pushup');
 
-    test('is available on both slots when neither uses it', () {
-      // Both paths high enough that only the cross-path rule could lock it.
+    test('no conflict when neither slot uses it', () {
       final positions = withPositions({
         'dip': const PathPosition(branchId: 'weighted', exerciseId: 'weighted_dips'),
         'pushup': const PathPosition(
@@ -133,11 +106,14 @@ void main() {
           exerciseId: 'pseudo_planche_pushups',
         ),
       });
-      expect(branchLock(dip, dip.branchById('hspu')!, positions), isNull);
-      expect(branchLock(pushup, pushup.branchById('hspu')!, positions), isNull);
+      expect(handstandConflict(dip, dip.branchById('hspu')!, positions), isNull);
+      expect(
+        handstandConflict(pushup, pushup.branchById('hspu')!, positions),
+        isNull,
+      );
     });
 
-    test('selecting it for dips locks it for push-ups', () {
+    test('names the other path when it already holds the chain', () {
       final positions = withPositions({
         'dip': const PathPosition(branchId: 'hspu', exerciseId: 'pike_pushups'),
         'pushup': const PathPosition(
@@ -145,13 +121,14 @@ void main() {
           exerciseId: 'pseudo_planche_pushups',
         ),
       });
+      // Reported so the caller can offer to move the other path — not so it
+      // can refuse this one.
       expect(
-        branchLock(pushup, pushup.branchById('hspu')!, positions),
-        BranchLockReason.takenByOtherSlot,
+        handstandConflict(pushup, pushup.branchById('hspu')!, positions),
+        'dip',
       );
-      // Still selectable on the slot already using it, so the dropdown can
-      // show it as the current value.
-      expect(branchLock(dip, dip.branchById('hspu')!, positions), isNull);
+      // The slot already using it is not in conflict with itself.
+      expect(handstandConflict(dip, dip.branchById('hspu')!, positions), isNull);
     });
 
     test('the rule is symmetric', () {
@@ -159,9 +136,16 @@ void main() {
         'pushup': const PathPosition(branchId: 'hspu', exerciseId: 'pike_pushups'),
         'dip': const PathPosition(branchId: 'weighted', exerciseId: 'weighted_dips'),
       });
+      expect(handstandConflict(dip, dip.branchById('hspu')!, positions), 'pushup');
+    });
+
+    test('never fires for any other route', () {
+      final positions = withPositions({
+        'dip': const PathPosition(branchId: 'hspu', exerciseId: 'pike_pushups'),
+      });
       expect(
-        branchLock(dip, dip.branchById('hspu')!, positions),
-        BranchLockReason.takenByOtherSlot,
+        handstandConflict(pushup, pushup.branchById('rings')!, positions),
+        isNull,
       );
     });
   });

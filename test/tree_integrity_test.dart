@@ -128,6 +128,69 @@ void main() {
     });
   });
 
+  group('default routes', () {
+    test('every path lists its default route first', () {
+      // The route chooser renders branches in declaration order, so the
+      // default has to lead or the chosen one is not the one the eye lands
+      // on first. Pinned because it is otherwise easy to break by appending.
+      for (final path in allPaths) {
+        expect(
+          path.branches.first.isDefault,
+          isTrue,
+          reason: '${path.id} leads with ${path.branches.first.id}, '
+              'but defaults to ${path.defaultBranch.id}',
+        );
+      }
+    });
+
+    test('exactly one route per path is the default', () {
+      for (final path in allPaths) {
+        expect(
+          path.branches.where((b) => b.isDefault),
+          hasLength(1),
+          reason: path.id,
+        );
+      }
+    });
+
+    test('every default route is linear', () {
+      // The detail screen records a pre-fork position against the default
+      // route, because an alternating route reports its position from its
+      // fork point and would silently discard the exercise. That only holds
+      // while no path defaults to an alternating route.
+      for (final path in allPaths) {
+        expect(
+          path.defaultBranch.kind,
+          BranchKind.linear,
+          reason: '${path.id} defaults to an alternating route',
+        );
+      }
+    });
+
+    test('the shared climb always lies on the default route', () {
+      // Same reason: the pre-fork rungs are stored against the default route,
+      // so its progression has to contain all of them.
+      for (final path in allPaths) {
+        final onDefault = path.progressionFor(path.defaultBranch);
+        for (final branch in path.branches) {
+          final shared =
+              path.progressionFor(branch).take(branch.attachesAtLevel - 1);
+          for (final id in shared) {
+            expect(onDefault, contains(id), reason: '${path.id}/${branch.id}');
+          }
+        }
+      }
+    });
+
+    test('the trunkless core paths follow the routine\'s own Option A', () {
+      // Anti-Rotation and Extension have no shared prefix, so the default
+      // route *is* the starting exercise — worth naming explicitly rather
+      // than letting declaration order decide it.
+      expect(pathById('antirotation').defaultBranch.id, 'weightedpallof');
+      expect(pathById('extension').defaultBranch.id, 'reversehyper');
+    });
+  });
+
   group('squat step-up and pistol branches', () {
     // The case that forced attachesAtLevel to index the canonical line rather
     // than the trunk: the squat trunk is two exercises, but these fork at 5.

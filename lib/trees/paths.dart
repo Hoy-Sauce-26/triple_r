@@ -322,17 +322,17 @@ const allPaths = <Path>[
     trunkIds: [],
     branches: [
       Branch(
-        id: 'ringpallof',
-        name: 'Ring Pallof Press',
-        attachesAtLevel: 1,
-        isDefault: true,
-        exerciseIds: ['ring_pallof_press'],
-      ),
-      Branch(
         id: 'weightedpallof',
         name: 'Weighted Pallof Press',
         attachesAtLevel: 1,
+        isDefault: true,
         exerciseIds: ['pallof_press'],
+      ),
+      Branch(
+        id: 'ringpallof',
+        name: 'Ring Pallof Press',
+        attachesAtLevel: 1,
+        exerciseIds: ['ring_pallof_press'],
       ),
       Branch(
         id: 'copenhagen',
@@ -356,17 +356,17 @@ const allPaths = <Path>[
     trunkIds: [],
     branches: [
       Branch(
-        id: 'arch',
-        name: 'Arch Body',
-        attachesAtLevel: 1,
-        isDefault: true,
-        exerciseIds: ['arch_raises', 'arch_body_holds', 'arch_body_rocks'],
-      ),
-      Branch(
         id: 'reversehyper',
         name: 'Reverse Hyperextension',
         attachesAtLevel: 1,
+        isDefault: true,
         exerciseIds: ['reverse_hyperextensions'],
+      ),
+      Branch(
+        id: 'arch',
+        name: 'Arch Body',
+        attachesAtLevel: 1,
+        exerciseIds: ['arch_raises', 'arch_body_holds', 'arch_body_rocks'],
       ),
       Branch(
         id: 'hyper',

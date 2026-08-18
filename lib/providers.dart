@@ -63,6 +63,46 @@ final reachedExercisesProvider = Provider<Set<String>>((ref) {
   return positions == null ? const {} : reachedExercises(positions);
 });
 
+/// A workout the user picked by hand, overriding the rotation, or null for
+/// whichever one is next.
+///
+/// Deliberately not persisted: it applies to the workout about to be started
+/// and is cleared on the way back to the dashboard. A stored override would
+/// quietly outlive the reason for it.
+class SelectedRotation extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void select(int index) => state = index;
+
+  /// Back to whichever workout the rotation says is next.
+  void clear() => state = null;
+}
+
+final selectedRotationProvider =
+    NotifierProvider<SelectedRotation, int?>(SelectedRotation.new);
+
+/// Which session number the next workout counts as.
+///
+/// Normally the completed count. When the user picks a workout out of order it
+/// is the session that order belongs to — see [sessionOrdinalForRotation].
+/// Everything that keys off "how many sessions are done" reads this rather
+/// than the raw count, so the pair order and the alternating hinge cannot
+/// disagree about which session this is.
+final plannedSessionOrdinalProvider = Provider<int?>((ref) {
+  final completed = ref.watch(completedSessionCountProvider).value;
+  final profile = ref.watch(profileProvider).value;
+  if (completed == null || profile == null) return null;
+
+  final chosen = ref.watch(selectedRotationProvider);
+  if (chosen == null) return completed;
+  return sessionOrdinalForRotation(
+    completed,
+    chosen,
+    rotatePairOrder: profile.rotatePairOrder,
+  );
+});
+
 /// The shape of the next workout: pair order, triplet, and the warmup items
 /// the user has unlocked.
 ///
@@ -70,12 +110,12 @@ final reachedExercisesProvider = Provider<Set<String>>((ref) {
 /// spinner rather than plan a session against a session count of zero, which
 /// would silently pick rotation 0.
 final nextSessionPlanProvider = Provider<SessionPlan?>((ref) {
-  final completed = ref.watch(completedSessionCountProvider).value;
+  final ordinal = ref.watch(plannedSessionOrdinalProvider);
   final profile = ref.watch(profileProvider).value;
-  if (completed == null || profile == null) return null;
+  if (ordinal == null || profile == null) return null;
 
   return planSession(
-    completedSessions: completed,
+    completedSessions: ordinal,
     rotatePairOrder: profile.rotatePairOrder,
     reachedExerciseIds: ref.watch(reachedExercisesProvider),
   );
@@ -83,7 +123,7 @@ final nextSessionPlanProvider = Provider<SessionPlan?>((ref) {
 
 /// The exercise each path contributes to the next session, keyed by path id.
 final nextSessionExercisesProvider = Provider<Map<String, String>>((ref) {
-  final completed = ref.watch(completedSessionCountProvider).value;
+  final completed = ref.watch(plannedSessionOrdinalProvider);
   final positions = ref.watch(pathPositionsProvider).value;
   if (completed == null || positions == null) return const {};
 
