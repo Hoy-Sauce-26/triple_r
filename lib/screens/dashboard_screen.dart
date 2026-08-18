@@ -6,8 +6,8 @@ import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/paths.dart';
-import 'active_workout_screen.dart';
 import 'warmup_screen.dart';
+import 'workout_flow_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -97,13 +97,15 @@ Future<void> _beginWorkout(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
 
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const WarmupScreen()),
+    MaterialPageRoute<void>(builder: (_) => const WorkoutFlowScreen()),
   );
 
-  // Back on the dashboard. The session row survives — it is resumable — but
-  // the clock and the wakelock must not, or a user who backed out and walked
-  // away leaves the screen pinned on until the battery dies. Elapsed time is
-  // derived from `startedAt`, so resuming picks up the true total.
+  // Back on the dashboard, and only now — the flow screen holds one route for
+  // the warmup and the workout both, so this future does not complete when
+  // the user crosses between them. The session row survives (it is resumable)
+  // but the clock and the wakelock must not, or a user who backed out and
+  // walked away leaves the screen pinned on until the battery dies. Elapsed
+  // time is derived from `startedAt`, so resuming picks up the true total.
   ref.read(sessionClockProvider.notifier).stop();
   ref.read(warmupChecklistProvider.notifier).clear();
 }
@@ -113,9 +115,13 @@ Future<void> _resumeWorkout(BuildContext context, WidgetRef ref) async {
   await ref.read(activeSessionProvider.notifier).resume();
   if (!context.mounted) return;
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const ActiveWorkoutScreen()),
+    MaterialPageRoute<void>(builder: (_) => const WorkoutFlowScreen(
+      // Already warmed up before the interruption.
+      skipWarmup: true,
+    )),
   );
   ref.read(sessionClockProvider.notifier).stop();
+  ref.read(warmupChecklistProvider.notifier).clear();
 }
 
 /// Offered when an `in_progress` session is found on launch.

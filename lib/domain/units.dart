@@ -77,6 +77,29 @@ double removeIncrement(
   return next <= 0 ? 0 : fromDisplayWeight(next, units);
 }
 
+/// Exact by definition, like [kgPerPound].
+const cmPerInch = 2.54;
+
+/// Height as a feet-and-inches pair.
+///
+/// Rounding is done on the *total* inches before the split, not on the
+/// remainder afterwards. Rounding the remainder is what produces `5'12"`:
+/// 182.8 cm is 71.97 inches, whose remainder rounds to 12 and leaves the feet
+/// untouched. Rounding first gives 72, which splits cleanly into 6'0".
+({int feet, int inches}) cmToFeetInches(double cm) {
+  final totalInches = (cm / cmPerInch).round();
+  return (feet: totalInches ~/ 12, inches: totalInches % 12);
+}
+
+double feetInchesToCm(int feet, int inches) => (feet * 12 + inches) * cmPerInch;
+
+/// `5'11"` or `180 cm`, matching how people actually say their height.
+String formatHeight(double cm, UnitSystem units) {
+  if (units == UnitSystem.metric) return '${cm.round()} cm';
+  final h = cmToFeetInches(cm);
+  return "${h.feet}'${h.inches}\"";
+}
+
 /// Renders a stored kilogram value for display, trimming a trailing `.0`.
 ///
 /// Rounds to 0.5 lb / 0.25 kg — fine enough for plate math, coarse enough to

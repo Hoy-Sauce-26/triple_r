@@ -7,6 +7,7 @@ import '../data/database.dart';
 import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
+import 'height_field.dart';
 
 /// Logs a body weight, and height the first time round.
 ///
@@ -27,13 +28,12 @@ class LogWeightDialog extends ConsumerStatefulWidget {
 
 class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
   final _weight = TextEditingController();
-  final _height = TextEditingController();
+  double? _heightCm;
   String? _error;
 
   @override
   void dispose() {
     _weight.dispose();
-    _height.dispose();
     super.dispose();
   }
 
@@ -42,7 +42,6 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
     final units = ref.watch(unitSystemProvider);
     final profile = ref.watch(profileProvider).value;
     final needsHeight = profile?.heightCm == null;
-    final imperial = units == UnitSystem.imperial;
 
     return AlertDialog(
       title: const Text('Log weight'),
@@ -66,18 +65,10 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
           ),
           if (needsHeight) ...[
             const SizedBox(height: 12),
-            TextField(
-              controller: _height,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-              ],
-              decoration: InputDecoration(
-                labelText: 'Height (optional)',
-                suffixText: imperial ? 'in' : 'cm',
-                border: const OutlineInputBorder(),
-                helperText: 'Asked once — it does not change.',
-              ),
+            HeightField(
+              units: units,
+              helperText: 'Optional. Asked once — it does not change.',
+              onChanged: (cm) => _heightCm = cm,
             ),
           ],
         ],
@@ -113,19 +104,9 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
       recordedAt: now,
     );
 
-    if (needsHeight) {
-      final height = double.tryParse(_height.text.trim());
-      if (height != null && height > 0) {
-        await db.updateProfile(
-          UserProfilesCompanion(
-            // Inches in imperial: nobody knows their height in centimetres in
-            // a country that measures it in feet.
-            heightCm: Value(
-              units == UnitSystem.imperial ? height * 2.54 : height,
-            ),
-          ),
-        );
-      }
+    if (needsHeight && _heightCm != null) {
+      // Already centimetres — HeightField owns the feet-and-inches split.
+      await db.updateProfile(UserProfilesCompanion(heightCm: Value(_heightCm)));
     }
 
     if (mounted) Navigator.of(context).pop();

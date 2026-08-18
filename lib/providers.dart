@@ -100,30 +100,39 @@ final nextSessionExercisesProvider = Provider<Map<String, String>>((ref) {
 });
 
 // ── Phase 5: metrics, history, analytics ───────────────────────────────────
+//
+// Everything below is `autoDispose`. These are the expensive subscriptions —
+// whole-table watches and per-exercise chart series — and without it they
+// stayed live for the life of the process once anything had touched them.
+// That meant every set logged mid-workout re-ran the analytics for screens
+// nobody was looking at. The `.family` ones leaked a subscription per key on
+// top of that, one for every exercise the user had ever opened a chart for.
 
 /// Moving backups in and out of the app.
 final backupFilesProvider =
     Provider<BackupFiles>((ref) => const PlatformBackupFiles());
 
 /// Body weight over time, newest first.
-final bodyWeightsProvider = StreamProvider<List<BodyWeightEntry>>((ref) {
+final bodyWeightsProvider =
+    StreamProvider.autoDispose<List<BodyWeightEntry>>((ref) {
   return ref.watch(databaseProvider).watchBodyWeights();
 });
 
 /// Finished sessions, newest first. Excludes the in-progress one, which the
 /// dashboard's resume banner owns.
-final sessionHistoryProvider = StreamProvider<List<WorkoutSession>>((ref) {
+final sessionHistoryProvider =
+    StreamProvider.autoDispose<List<WorkoutSession>>((ref) {
   return ref.watch(databaseProvider).watchSessionHistory();
 });
 
 /// The sets belonging to one session.
 final sessionSetsProvider =
-    StreamProvider.family<List<SetRecord>, String>((ref, sessionId) {
+    StreamProvider.autoDispose.family<List<SetRecord>, String>((ref, sessionId) {
   return ref.watch(databaseProvider).watchSetsForSession(sessionId);
 });
 
 /// Exercises that have something to plot, most recently trained first.
-final loggedExerciseIdsProvider = FutureProvider<List<String>>((ref) {
+final loggedExerciseIdsProvider = FutureProvider.autoDispose<List<String>>((ref) {
   // Re-runs whenever the history changes, so an exercise appears in the
   // picker the moment its first set is logged.
   ref.watch(sessionHistoryProvider);
@@ -132,7 +141,7 @@ final loggedExerciseIdsProvider = FutureProvider<List<String>>((ref) {
 
 /// One exercise's chart series.
 final exerciseSeriesProvider =
-    StreamProvider.family<ExerciseSeries, String>((ref, exerciseId) {
+    StreamProvider.autoDispose.family<ExerciseSeries, String>((ref, exerciseId) {
   return ref
       .watch(databaseProvider)
       .watchSetsForExercise(exerciseId)
@@ -140,8 +149,13 @@ final exerciseSeriesProvider =
 });
 
 /// Every advancement the log implies, newest first.
+///
+/// Still a whole-table watch: a transition is only visible by walking a
+/// path's sets in order, so there is no narrower query that finds them. What
+/// `autoDispose` buys is that the walk now happens only while the history
+/// screen is actually open, rather than on every insert forever.
 final progressionEventsProvider =
-    StreamProvider<List<ProgressionEvent>>((ref) {
+    StreamProvider.autoDispose<List<ProgressionEvent>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.select(db.setRecords).watch().map(progressionEvents);
 });

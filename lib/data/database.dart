@@ -248,21 +248,29 @@ class AppDatabase extends _$AppDatabase {
     String exerciseId, {
     String? excludingSessionId,
   }) async {
-    final query = select(setRecords)
-      ..where((s) => s.exerciseId.equals(exerciseId))
-      ..orderBy([
-        (s) => OrderingTerm(expression: s.recordedAt, mode: OrderingMode.desc),
-      ]);
-    if (excludingSessionId != null) {
-      query.where((s) => s.sessionId.equals(excludingSessionId).not());
-    }
+    // Two bounded queries rather than one unbounded one. Reading every set
+    // ever recorded for an exercise and filtering in Dart worked, but the
+    // read grew with training history forever, and this runs on every set of
+    // every workout. The first query finds which session was last; the second
+    // fetches only that session's sets.
+    final latest = await (select(setRecords)
+          ..where((s) => s.exerciseId.equals(exerciseId))
+          ..where((s) => excludingSessionId == null
+              ? const Constant(true)
+              : s.sessionId.equals(excludingSessionId).not())
+          ..orderBy([
+            (s) =>
+                OrderingTerm(expression: s.recordedAt, mode: OrderingMode.desc),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    if (latest == null) return const [];
 
-    final rows = await query.get();
-    if (rows.isEmpty) return const [];
-
-    final sessionId = rows.first.sessionId;
-    return rows.where((r) => r.sessionId == sessionId).toList()
-      ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+    return (select(setRecords)
+          ..where((s) => s.exerciseId.equals(exerciseId))
+          ..where((s) => s.sessionId.equals(latest.sessionId))
+          ..orderBy([(s) => OrderingTerm(expression: s.setIndex)]))
+        .get();
   }
 
   // ── Body metrics ─────────────────────────────────────────────────────────

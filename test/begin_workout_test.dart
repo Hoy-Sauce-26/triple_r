@@ -106,6 +106,55 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('the session clock and wakelock survive the warmup handoff',
+      (tester) async {
+    // The regression this file exists for. The warmup used to
+    // `pushReplacement` itself with the workout screen, which completes the
+    // *replaced* route's popped future — so the dashboard's teardown ran the
+    // moment the user tapped through, freezing the clock at 0:00 and letting
+    // the screen sleep for the rest of the workout.
+    await pumpApp(tester);
+    await tester.tap(find.text('Begin workout'));
+    await tester.pumpAndSettle();
+
+    clock.advance(const Duration(minutes: 2));
+    ticker.tick();
+    await tester.pumpAndSettle();
+    expect(find.text('2:00'), findsOneWidget);
+
+    await tester.tap(find.text('Skip to workout'));
+    await tester.pumpAndSettle();
+
+    clock.advance(const Duration(minutes: 1));
+    ticker.tick();
+    await tester.pumpAndSettle();
+
+    expect(find.text('3:00'), findsOneWidget,
+        reason: 'the clock keeps running across the handoff');
+    expect(wake.isEnabled, isTrue,
+        reason: 'the screen must stay awake for the whole workout');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('leaving the workout stops the clock and the wakelock',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('Begin workout'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip to workout'));
+    await tester.pumpAndSettle();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(wake.isEnabled, isFalse);
+    expect(find.text('Workout in progress'), findsOneWidget,
+        reason: 'the session is still resumable');
+
+    await disposeApp(tester);
+  });
+
   testWidgets('the warmup checklist resets when the session is resumed',
       (tester) async {
     await pumpApp(tester);

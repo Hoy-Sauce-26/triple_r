@@ -470,10 +470,25 @@ final currentSessionSetsProvider = StreamProvider<List<SetRecord>>((ref) {
   return ref.watch(databaseProvider).watchSetsForSession(session.id);
 });
 
+/// The load the progression system currently has this exercise at.
+///
+/// Distinct from "what was on the bar last session": accepting an add-load
+/// prompt at the end of a workout raises this, so it is the weight the user
+/// intends to lift *next*, which is what the logger should offer.
+final exerciseStateProvider =
+    FutureProvider.autoDispose.family<ExerciseState?, String>((ref, exerciseId) {
+  // Re-read after each set so an edit or a fresh session picks up changes.
+  ref.watch(activeSessionProvider);
+  return ref.watch(databaseProvider).exerciseState(exerciseId);
+});
+
 /// What the user managed on this exercise last time, used to pre-fill the
 /// logger so the common case is one tap.
+/// `autoDispose` because it is keyed by exercise: without it, a session that
+/// touches nine exercises leaves nine live subscriptions behind, and they
+/// accumulate for as long as the process lives.
 final previousSetsProvider =
-    FutureProvider.family<List<SetRecord>, String>((ref, exerciseId) {
+    FutureProvider.autoDispose.family<List<SetRecord>, String>((ref, exerciseId) {
   final session = ref.watch(activeSessionProvider).value;
   return ref.watch(databaseProvider).lastSessionSets(
         exerciseId,

@@ -7,7 +7,6 @@ import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/tree_types.dart';
 import '../theme.dart';
-import 'active_workout_screen.dart';
 
 /// Which warmup items the user has ticked off this session.
 ///
@@ -28,16 +27,13 @@ class WarmupChecklist extends Notifier<Set<String>> {
 final warmupChecklistProvider =
     NotifierProvider<WarmupChecklist, Set<String>>(WarmupChecklist.new);
 
-/// Marks the warmup done and replaces this screen with the workout.
+/// Marks the warmup done.
 ///
-/// `pushReplacement` rather than `push`: backing out of a set should not drop
-/// the user into the warmup they already finished.
-Future<void> _startWorkout(BuildContext context, WidgetRef ref) async {
+/// No navigation: [WorkoutFlowScreen] owns the route and swaps itself to the
+/// workout when the cursor says the warmup is behind us. Pushing from here is
+/// what used to tear the session clock down mid-workout.
+Future<void> _startWorkout(WidgetRef ref) async {
   await ref.read(activeSessionProvider.notifier).completeWarmup();
-  if (!context.mounted) return;
-  await Navigator.of(context).pushReplacement(
-    MaterialPageRoute<void>(builder: (_) => const ActiveWorkoutScreen()),
-  );
 }
 
 class WarmupScreen extends ConsumerWidget {
@@ -109,7 +105,7 @@ class WarmupScreen extends ConsumerWidget {
         // Never disabled. The warmup is advisory — refusing to let someone
         // start training because they did not tick a box is the app getting
         // in the way of the thing it exists to help with.
-        onPressed: () => _startWorkout(context, ref),
+        onPressed: () => _startWorkout(ref),
         icon: const Icon(Icons.check),
         label: Text(complete ? 'Start workout' : 'Skip to workout'),
       ),

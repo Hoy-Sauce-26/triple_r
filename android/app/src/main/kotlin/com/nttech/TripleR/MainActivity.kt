@@ -1,4 +1,4 @@
-package com.nttech.triple_r
+package com.nttech.TripleR
 
 import io.flutter.embedding.android.FlutterActivity
 

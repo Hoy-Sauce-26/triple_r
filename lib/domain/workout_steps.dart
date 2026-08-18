@@ -35,11 +35,17 @@ class WorkoutStep {
   bool get isTriplet => slot.isTriplet;
 }
 
+/// Sets per exercise, for every block. The Recommended Routine's own number.
+///
+/// Shared rather than repeated so the "set 2 of 3" label and the three rows
+/// the logger renders cannot drift apart from the steps actually built.
+const setsPerExercise = 3;
+
 /// Flattens a plan into the order the user actually works through it.
 ///
 /// Pairs alternate within each set so one side rests while the other works;
 /// the triplet is a circuit, cycling all three before repeating.
-List<WorkoutStep> buildSteps(SessionPlan plan, {int sets = 3}) {
+List<WorkoutStep> buildSteps(SessionPlan plan, {int sets = setsPerExercise}) {
   final steps = <WorkoutStep>[];
 
   void add(String pathId, int setIndex, Slot slot, String label) {
