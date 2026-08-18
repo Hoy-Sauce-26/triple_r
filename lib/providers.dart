@@ -63,6 +63,46 @@ final reachedExercisesProvider = Provider<Set<String>>((ref) {
   return positions == null ? const {} : reachedExercises(positions);
 });
 
+/// A workout the user picked by hand, overriding the rotation, or null for
+/// whichever one is next.
+///
+/// Deliberately not persisted: it applies to the workout about to be started
+/// and is cleared on the way back to the dashboard. A stored override would
+/// quietly outlive the reason for it.
+class SelectedRotation extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void select(int index) => state = index;
+
+  /// Back to whichever workout the rotation says is next.
+  void clear() => state = null;
+}
+
+final selectedRotationProvider =
+    NotifierProvider<SelectedRotation, int?>(SelectedRotation.new);
+
+/// Which session number the next workout counts as.
+///
+/// Normally the completed count. When the user picks a workout out of order it
+/// is the session that order belongs to — see [sessionOrdinalForRotation].
+/// Everything that keys off "how many sessions are done" reads this rather
+/// than the raw count, so the pair order and the alternating hinge cannot
+/// disagree about which session this is.
+final plannedSessionOrdinalProvider = Provider<int?>((ref) {
+  final completed = ref.watch(completedSessionCountProvider).value;
+  final profile = ref.watch(profileProvider).value;
+  if (completed == null || profile == null) return null;
+
+  final chosen = ref.watch(selectedRotationProvider);
+  if (chosen == null) return completed;
+  return sessionOrdinalForRotation(
+    completed,
+    chosen,
+    rotatePairOrder: profile.rotatePairOrder,
+  );
+});
+
 /// The shape of the next workout: pair order, triplet, and the warmup items
 /// the user has unlocked.
 ///
@@ -70,12 +110,12 @@ final reachedExercisesProvider = Provider<Set<String>>((ref) {
 /// spinner rather than plan a session against a session count of zero, which
 /// would silently pick rotation 0.
 final nextSessionPlanProvider = Provider<SessionPlan?>((ref) {
-  final completed = ref.watch(completedSessionCountProvider).value;
+  final ordinal = ref.watch(plannedSessionOrdinalProvider);
   final profile = ref.watch(profileProvider).value;
-  if (completed == null || profile == null) return null;
+  if (ordinal == null || profile == null) return null;
 
   return planSession(
-    completedSessions: completed,
+    completedSessions: ordinal,
     rotatePairOrder: profile.rotatePairOrder,
     reachedExerciseIds: ref.watch(reachedExercisesProvider),
   );
@@ -83,7 +123,7 @@ final nextSessionPlanProvider = Provider<SessionPlan?>((ref) {
 
 /// The exercise each path contributes to the next session, keyed by path id.
 final nextSessionExercisesProvider = Provider<Map<String, String>>((ref) {
-  final completed = ref.watch(completedSessionCountProvider).value;
+  final completed = ref.watch(plannedSessionOrdinalProvider);
   final positions = ref.watch(pathPositionsProvider).value;
   if (completed == null || positions == null) return const {};
 
@@ -100,30 +140,39 @@ final nextSessionExercisesProvider = Provider<Map<String, String>>((ref) {
 });
 
 // ── Phase 5: metrics, history, analytics ───────────────────────────────────
+//
+// Everything below is `autoDispose`. These are the expensive subscriptions —
+// whole-table watches and per-exercise chart series — and without it they
+// stayed live for the life of the process once anything had touched them.
+// That meant every set logged mid-workout re-ran the analytics for screens
+// nobody was looking at. The `.family` ones leaked a subscription per key on
+// top of that, one for every exercise the user had ever opened a chart for.
 
 /// Moving backups in and out of the app.
 final backupFilesProvider =
     Provider<BackupFiles>((ref) => const PlatformBackupFiles());
 
 /// Body weight over time, newest first.
-final bodyWeightsProvider = StreamProvider<List<BodyWeightEntry>>((ref) {
+final bodyWeightsProvider =
+    StreamProvider.autoDispose<List<BodyWeightEntry>>((ref) {
   return ref.watch(databaseProvider).watchBodyWeights();
 });
 
 /// Finished sessions, newest first. Excludes the in-progress one, which the
 /// dashboard's resume banner owns.
-final sessionHistoryProvider = StreamProvider<List<WorkoutSession>>((ref) {
+final sessionHistoryProvider =
+    StreamProvider.autoDispose<List<WorkoutSession>>((ref) {
   return ref.watch(databaseProvider).watchSessionHistory();
 });
 
 /// The sets belonging to one session.
 final sessionSetsProvider =
-    StreamProvider.family<List<SetRecord>, String>((ref, sessionId) {
+    StreamProvider.autoDispose.family<List<SetRecord>, String>((ref, sessionId) {
   return ref.watch(databaseProvider).watchSetsForSession(sessionId);
 });
 
 /// Exercises that have something to plot, most recently trained first.
-final loggedExerciseIdsProvider = FutureProvider<List<String>>((ref) {
+final loggedExerciseIdsProvider = FutureProvider.autoDispose<List<String>>((ref) {
   // Re-runs whenever the history changes, so an exercise appears in the
   // picker the moment its first set is logged.
   ref.watch(sessionHistoryProvider);
@@ -132,7 +181,7 @@ final loggedExerciseIdsProvider = FutureProvider<List<String>>((ref) {
 
 /// One exercise's chart series.
 final exerciseSeriesProvider =
-    StreamProvider.family<ExerciseSeries, String>((ref, exerciseId) {
+    StreamProvider.autoDispose.family<ExerciseSeries, String>((ref, exerciseId) {
   return ref
       .watch(databaseProvider)
       .watchSetsForExercise(exerciseId)
@@ -140,8 +189,13 @@ final exerciseSeriesProvider =
 });
 
 /// Every advancement the log implies, newest first.
+///
+/// Still a whole-table watch: a transition is only visible by walking a
+/// path's sets in order, so there is no narrower query that finds them. What
+/// `autoDispose` buys is that the walk now happens only while the history
+/// screen is actually open, rather than on every insert forever.
 final progressionEventsProvider =
-    StreamProvider<List<ProgressionEvent>>((ref) {
+    StreamProvider.autoDispose<List<ProgressionEvent>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.select(db.setRecords).watch().map(progressionEvents);
 });

@@ -4,21 +4,22 @@ A free, offline companion for the
 [Reddit Recommended Routine](https://www.reddit.com/r/bodyweightfitness/wiki/kb/recommended_routine/).
 No account, no ads, no backend — everything lives on the device.
 
-- **Package:** `com.nttech.triple_r`
+- **Package:** `com.nttech.TripleR` (local dev builds install alongside as
+  `com.nttech.TripleR.dev`, with their own database)
 - **Platforms:** Android and iOS
 - **Sibling project:** [Roamfree](../step_counter), whose design language this
   shares (same Material 3 seed, same flat-surface style)
 
 ## Status
 
-**Phase 3 — timers and warmup.** Everything from Phase 2, plus the rest and
-hold countdowns, the session clock, audio and haptic cues, screen wakelock,
-scheduled rest notifications, and the dynamic warmup screen. The guided
-pair/triplet workout and the charts are not built yet; tabs that are still
-empty say which phase fills them in.
+**Phase 6 complete.** All six phases are in: the progression trees, the
+database, the timers and warmup, the guided pair/triplet workout, the charts
+and history, and backup/restore.
 
-The session *row* is not written yet — Begin workout starts the clock and
-opens the warmup, and Phase 4 takes it from there.
+The warmup and the workout live behind a single route,
+[`WorkoutFlowScreen`](lib/screens/workout_flow_screen.dart), so the session
+clock and the wakelock belong to the session rather than to a navigation
+stack — see the notes there before splitting them apart again.
 
 See [`docs/PLAN.md`](docs/PLAN.md) for the full spec and phase roadmap.
 

@@ -20,6 +20,16 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _index = 0;
 
+  /// Tabs the user has actually opened.
+  ///
+  /// An `IndexedStack` builds every child, so all four screens used to mount
+  /// and subscribe at launch — including the two analytics tabs, whose
+  /// providers watch whole tables. Every set logged during a workout then
+  /// re-ran chart maths for screens nobody had ever looked at. Building a tab
+  /// only once it has been visited keeps the state-preserving behaviour for
+  /// tabs in use and costs nothing for tabs that are not.
+  final _visited = <int>{0};
+
   static const _destinations = <NavigationDestination>[
     NavigationDestination(
       icon: Icon(Icons.home_outlined),
@@ -43,24 +53,32 @@ class _AppShellState extends State<AppShell> {
     ),
   ];
 
+  static const _screens = <Widget>[
+    DashboardScreen(),
+    ProgressionScreen(),
+    HistoryScreen(),
+    SettingsScreen(),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // IndexedStack so each tab keeps its scroll position and state across
-      // switches, rather than rebuilding from scratch.
+      // IndexedStack so a tab already opened keeps its scroll position and
+      // state across switches, rather than rebuilding from scratch.
       body: IndexedStack(
         index: _index,
-        children: const [
-          DashboardScreen(),
-          ProgressionScreen(),
-          HistoryScreen(),
-          SettingsScreen(),
+        children: [
+          for (final (i, screen) in _screens.indexed)
+            _visited.contains(i) ? screen : const SizedBox.shrink(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         destinations: _destinations,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) => setState(() {
+          _index = i;
+          _visited.add(i);
+        }),
       ),
     );
   }

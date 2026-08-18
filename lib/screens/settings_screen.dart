@@ -7,7 +7,7 @@ import '../domain/backup.dart';
 import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
-import '../widgets/number_entry_dialog.dart';
+import '../widgets/height_field.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -94,14 +94,8 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  static String _heightLabel(double? cm, UnitSystem units) {
-    if (cm == null) return 'Not set';
-    if (units == UnitSystem.metric) return '${cm.round()} cm';
-    final totalInches = cm / 2.54;
-    final feet = totalInches ~/ 12;
-    final inches = (totalInches % 12).round();
-    return "$feet'$inches\"";
-  }
+  static String _heightLabel(double? cm, UnitSystem units) =>
+      cm == null ? 'Not set' : formatHeight(cm, units);
 
   static Future<void> _editHeight(
     BuildContext context,
@@ -109,27 +103,53 @@ class SettingsScreen extends ConsumerWidget {
     double? current,
     UnitSystem units,
   ) async {
-    final imperial = units == UnitSystem.imperial;
-
-    final text = await showDialog<String>(
+    final entered = await showDialog<double>(
       context: context,
-      builder: (_) => NumberEntryDialog(
-        title: 'Height',
-        initialText: current == null
-            ? ''
-            : (imperial ? current / 2.54 : current).toStringAsFixed(0),
-        suffixText: imperial ? 'in' : 'cm',
-        decimal: true,
-      ),
+      builder: (_) => _HeightDialog(units: units, initialCm: current),
     );
-
-    final entered = text == null ? null : double.tryParse(text);
-    if (entered == null || entered <= 0) return;
+    if (entered == null) return;
     await ref.read(databaseProvider).updateProfile(
-          UserProfilesCompanion(
-            heightCm: Value(imperial ? entered * 2.54 : entered),
-          ),
+          UserProfilesCompanion(heightCm: Value(entered)),
         );
+  }
+}
+
+/// Feet and inches for imperial, centimetres for metric — see [HeightField].
+class _HeightDialog extends StatefulWidget {
+  const _HeightDialog({required this.units, this.initialCm});
+
+  final UnitSystem units;
+  final double? initialCm;
+
+  @override
+  State<_HeightDialog> createState() => _HeightDialogState();
+}
+
+class _HeightDialogState extends State<_HeightDialog> {
+  late double? _cm = widget.initialCm;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Height'),
+      content: HeightField(
+        units: widget.units,
+        initialCm: widget.initialCm,
+        autofocus: true,
+        onChanged: (value) => setState(() => _cm = value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed:
+              _cm == null ? null : () => Navigator.of(context).pop(_cm),
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 

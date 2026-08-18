@@ -6,9 +6,15 @@ import '../trees/exercises.dart';
 import '../trees/paths.dart';
 import '../trees/tree_rules.dart';
 import '../trees/tree_types.dart' as trees;
+import '../theme.dart';
+import 'path_detail_screen.dart';
 
-/// Lists all nine paths and lets the user pick a branch and their current
-/// exercise within it.
+/// Where the user stands on all nine paths, one line each.
+///
+/// A status list rather than nine editors. The previous screen put a pair of
+/// coupled dropdowns on every card, which made the tab a wall of controls and
+/// still could not show a progression's shape — see [PathDetailScreen], which
+/// owns the editing and the ladder.
 class ProgressionScreen extends ConsumerWidget {
   const ProgressionScreen({super.key});
 
@@ -25,27 +31,30 @@ class ProgressionScreen extends ConsumerWidget {
         data: (map) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
-            for (final group in _groups)
-              ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-                  child: Text(
-                    group.label,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                  ),
+            for (final group in _groups) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
+                child: Text(
+                  group.label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                 ),
-                for (final pathId in group.pathIds)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _PathCard(
-                      path: pathById(pathId),
-                      positions: map,
-                      completedSessions: sessions.value ?? 0,
-                    ),
-                  ),
-              ],
+              ),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    for (final pathId in group.pathIds)
+                      _PathRow(
+                        path: pathById(pathId),
+                        positions: map,
+                        completedSessions: sessions.value ?? 0,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -66,8 +75,8 @@ const _groups = [
   _Group('Core triplet', ['antiextension', 'antirotation', 'extension']),
 ];
 
-class _PathCard extends ConsumerWidget {
-  const _PathCard({
+class _PathRow extends StatelessWidget {
+  const _PathRow({
     required this.path,
     required this.positions,
     required this.completedSessions,
@@ -78,59 +87,50 @@ class _PathCard extends ConsumerWidget {
   final int completedSessions;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final position = positions[path.id]!;
     final branch = path.branchById(position.branchId) ?? path.defaultBranch;
     final alternating = branch.kind == trees.BranchKind.alternating;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(path.name, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 2),
+    return ListTile(
+      title: Text(path.name, style: theme.textTheme.titleSmall),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _currentLabel(branch, position),
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (alternating)
             Text(
-              _currentLabel(branch, position),
-              style: theme.textTheme.bodyLarge?.copyWith(
+              'Next session: '
+              '${exerciseById(branch.exerciseForSession(completedSessions)).name}',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.primary),
+            ),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!alternating)
+            Text(
+              // Position on the route the user is actually climbing, not on
+              // the path as a whole — a rung count is only meaningful within
+              // one route.
+              '${levelFor(path, position)}/${path.progressionFor(branch).length}',
+              style: theme.textTheme.labelMedium?.tabular.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            if (alternating)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Next session: '
-                  '${exerciseById(branch.exerciseForSession(completedSessions)).name}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _BranchDropdown(
-                    path: path,
-                    current: branch,
-                    positions: positions,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (!alternating)
-                  Expanded(
-                    child: _ExerciseDropdown(
-                      path: path,
-                      branch: branch,
-                      position: position,
-                    ),
-                  ),
-              ],
-            ),
-          ],
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PathDetailScreen(pathId: path.id),
         ),
       ),
     );
@@ -142,129 +142,5 @@ class _PathCard extends ConsumerWidget {
     }
     final id = position.exerciseId;
     return id == null ? '—' : exerciseById(id).name;
-  }
-}
-
-class _BranchDropdown extends ConsumerWidget {
-  const _BranchDropdown({
-    required this.path,
-    required this.current,
-    required this.positions,
-  });
-
-  final trees.Path path;
-  final trees.Branch current;
-  final Map<String, PathPosition> positions;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DropdownButtonFormField<String>(
-      initialValue: current.id,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Branch',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-      items: [
-        for (final branch in path.branches)
-          DropdownMenuItem(
-            value: branch.id,
-            enabled: branchLock(path, branch, positions) == null,
-            child: _BranchLabel(
-              branch: branch,
-              lock: branchLock(path, branch, positions),
-            ),
-          ),
-      ],
-      onChanged: (branchId) {
-        if (branchId == null || branchId == current.id) return;
-        final branch = path.branchById(branchId)!;
-        // A locked branch still fires onChanged on some platforms, so the
-        // rule is re-checked here rather than trusted to the disabled item.
-        if (branchLock(path, branch, positions) != null) return;
-        final next = positionAfterSwitch(path, branch);
-        ref.read(databaseProvider).saveProgressionConfig(
-              pathId: path.id,
-              branchId: next.branchId,
-              exerciseId: next.exerciseId,
-            );
-      },
-    );
-  }
-}
-
-class _BranchLabel extends StatelessWidget {
-  const _BranchLabel({required this.branch, required this.lock});
-
-  final trees.Branch branch;
-  final BranchLockReason? lock;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (lock == null) {
-      return Text(branch.name, overflow: TextOverflow.ellipsis);
-    }
-    return Row(
-      children: [
-        Flexible(
-          child: Text(
-            branch.name,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: theme.disabledColor),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Icon(
-          lock == BranchLockReason.takenByOtherSlot
-              ? Icons.swap_horiz
-              : Icons.lock_outline,
-          size: 14,
-          color: theme.disabledColor,
-        ),
-      ],
-    );
-  }
-}
-
-class _ExerciseDropdown extends ConsumerWidget {
-  const _ExerciseDropdown({
-    required this.path,
-    required this.branch,
-    required this.position,
-  });
-
-  final trees.Path path;
-  final trees.Branch branch;
-  final PathPosition position;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final progression = path.progressionFor(branch);
-    return DropdownButtonFormField<String>(
-      initialValue: position.exerciseId,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Current',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-      items: [
-        for (final id in progression)
-          DropdownMenuItem(
-            value: id,
-            child: Text(exerciseById(id).name, overflow: TextOverflow.ellipsis),
-          ),
-      ],
-      onChanged: (exerciseId) {
-        if (exerciseId == null || exerciseId == position.exerciseId) return;
-        ref.read(databaseProvider).saveProgressionConfig(
-              pathId: path.id,
-              branchId: branch.id,
-              exerciseId: exerciseId,
-            );
-      },
-    );
   }
 }

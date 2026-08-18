@@ -6,8 +6,8 @@ import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/paths.dart';
-import 'active_workout_screen.dart';
 import 'warmup_screen.dart';
+import 'workout_flow_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -43,6 +43,11 @@ class DashboardScreen extends ConsumerWidget {
                       'Workout ${plan.rotationIndex + 1} of 3',
                       style: theme.textTheme.headlineSmall,
                     ),
+                    if (ref.watch(profileProvider).value?.rotatePairOrder ??
+                        false) ...[
+                      const SizedBox(height: 12),
+                      _WorkoutPicker(selected: plan.rotationIndex),
+                    ],
                     const SizedBox(height: 12),
                     for (final (index, pair) in plan.pairs.indexed)
                       _PlanRow(
@@ -97,15 +102,50 @@ Future<void> _beginWorkout(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
 
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const WarmupScreen()),
+    MaterialPageRoute<void>(builder: (_) => const WorkoutFlowScreen()),
   );
 
-  // Back on the dashboard. The session row survives — it is resumable — but
-  // the clock and the wakelock must not, or a user who backed out and walked
-  // away leaves the screen pinned on until the battery dies. Elapsed time is
-  // derived from `startedAt`, so resuming picks up the true total.
+  // Back on the dashboard, and only now — the flow screen holds one route for
+  // the warmup and the workout both, so this future does not complete when
+  // the user crosses between them. The session row survives (it is resumable)
+  // but the clock and the wakelock must not, or a user who backed out and
+  // walked away leaves the screen pinned on until the battery dies. Elapsed
+  // time is derived from `startedAt`, so resuming picks up the true total.
   ref.read(sessionClockProvider.notifier).stop();
   ref.read(warmupChecklistProvider.notifier).clear();
+  // A hand-picked workout applies to the one just started, not to the next
+  // one — the rotation takes over again from here.
+  ref.read(selectedRotationProvider.notifier).clear();
+}
+
+/// Lets the user start a workout other than the one the rotation is due.
+///
+/// The rotation is derived from the completed count, so it silently assumes
+/// every session got logged. Someone who trained and forgot had no way to say
+/// so, and would be handed the same order twice.
+class _WorkoutPicker extends ConsumerWidget {
+  const _WorkoutPicker({required this.selected});
+
+  final int selected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<int>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: 0, label: Text('1')),
+          ButtonSegment(value: 1, label: Text('2')),
+          ButtonSegment(value: 2, label: Text('3')),
+        ],
+        selected: {selected},
+        onSelectionChanged: (values) => ref
+            .read(selectedRotationProvider.notifier)
+            .select(values.first),
+      ),
+    );
+  }
 }
 
 /// Picks up a workout that was interrupted.
@@ -113,9 +153,13 @@ Future<void> _resumeWorkout(BuildContext context, WidgetRef ref) async {
   await ref.read(activeSessionProvider.notifier).resume();
   if (!context.mounted) return;
   await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const ActiveWorkoutScreen()),
+    MaterialPageRoute<void>(builder: (_) => const WorkoutFlowScreen(
+      // Already warmed up before the interruption.
+      skipWarmup: true,
+    )),
   );
   ref.read(sessionClockProvider.notifier).stop();
+  ref.read(warmupChecklistProvider.notifier).clear();
 }
 
 /// Offered when an `in_progress` session is found on launch.

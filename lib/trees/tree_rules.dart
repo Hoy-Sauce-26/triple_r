@@ -12,16 +12,6 @@ class PathPosition {
   final String? exerciseId;
 }
 
-/// Why a branch cannot currently be selected. Null means it can.
-enum BranchLockReason {
-  /// The branch forks above where the user has reached.
-  notYetReached,
-
-  /// The handstand push-up chain is already filling the other vertical-push
-  /// slot, and one movement cannot occupy two slots in the same workout.
-  takenByOtherSlot,
-}
-
 /// The two paths that can both be set to the handstand push-up chain.
 const _hspuPathIds = {'dip', 'pushup'};
 const _hspuBranchId = 'hspu';
@@ -40,39 +30,38 @@ int levelFor(Path path, PathPosition position) {
   return path.levelOf(branch, exerciseId) ?? 1;
 }
 
-/// Whether [branch] can be selected on [path] right now, and if not, why.
+/// The other vertical-push path currently using the handstand chain, if
+/// selecting [branch] here would put the same movement in both slots.
 ///
-/// [positions] is the user's position on every path, needed only for the
-/// cross-path handstand push-up rule.
-BranchLockReason? branchLock(
+/// Deliberately **not** a lock. Routes are never gated on the user's level:
+/// someone installing the app already able to do pistol squats must be able
+/// to say so on day one, and a rule that makes them walk the current-exercise
+/// list upward first is a puzzle, not a safeguard. The fork level is shown as
+/// information on the route itself.
+///
+/// This is the one genuine constraint left, and it is structural rather than
+/// aspirational — the same movement cannot fill both vertical-push slots of a
+/// single workout, because the session builder would program it twice. The
+/// caller resolves it by moving the other path, not by refusing this one.
+String? handstandConflict(
   Path path,
   Branch branch,
   Map<String, PathPosition> positions,
 ) {
-  final current = positions[path.id];
+  if (branch.id != _hspuBranchId || !_hspuPathIds.contains(path.id)) return null;
+  final otherId = _hspuPathIds.firstWhere((id) => id != path.id);
+  final other = positions[otherId];
+  if (other == null || other.branchId != _hspuBranchId) return null;
 
-  // Two branches are never level-locked: the default one spans the canonical
-  // line from level 1, and the branch the user is already on must stay
-  // selectable or the dropdown cannot render its own current value — which
-  // would strand a beginner on a squat path whose default branch forks at 3.
-  final exemptFromLevel = branch.isDefault || current?.branchId == branch.id;
-
-  // Any other branch forking at level N needs the user to have reached the
-  // exercise just below it.
-  if (!exemptFromLevel && branch.attachesAtLevel > 1 && current != null) {
-    final level = levelFor(path, current);
-    if (level < branch.attachesAtLevel - 1) return BranchLockReason.notYetReached;
-  }
-
-  // One movement cannot fill both vertical-push slots in the same session.
-  if (branch.id == _hspuBranchId && _hspuPathIds.contains(path.id)) {
-    final otherId = _hspuPathIds.firstWhere((id) => id != path.id);
-    if (positions[otherId]?.branchId == _hspuBranchId) {
-      return BranchLockReason.takenByOtherSlot;
-    }
-  }
-
-  return null;
+  // Naming a route in a config row is not the same as being on it. A user
+  // sitting below the fork has taken nothing yet — the detail screen shows no
+  // route as chosen — so treating them as occupying the handstand slot
+  // produced a conflict over a movement neither path was actually doing.
+  final otherPath = pathById(otherId);
+  final otherBranch = otherPath.branchById(_hspuBranchId)!;
+  return levelFor(otherPath, other) >= otherBranch.attachesAtLevel
+      ? otherId
+      : null;
 }
 
 /// The starting position for a path with nothing configured: the default
