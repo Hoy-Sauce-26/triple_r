@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:drift_flutter/drift_flutter.dart';
@@ -261,5 +263,93 @@ class AppDatabase extends _$AppDatabase {
     final sessionId = rows.first.sessionId;
     return rows.where((r) => r.sessionId == sessionId).toList()
       ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+  }
+
+  // ── Body metrics ─────────────────────────────────────────────────────────
+
+  /// Newest first, which is the order both the chart and the list want.
+  Stream<List<BodyWeightEntry>> watchBodyWeights() => (select(bodyWeightEntries)
+        ..orderBy([
+          (e) => OrderingTerm(expression: e.recordedAt, mode: OrderingMode.desc),
+        ]))
+      .watch();
+
+  Future<BodyWeightEntry?> latestBodyWeight() => (select(bodyWeightEntries)
+        ..orderBy([
+          (e) => OrderingTerm(expression: e.recordedAt, mode: OrderingMode.desc),
+        ])
+        ..limit(1))
+      .getSingleOrNull();
+
+  Future<void> addBodyWeight({
+    required String id,
+    required double weightKg,
+    required DateTime recordedAt,
+  }) =>
+      into(bodyWeightEntries).insertOnConflictUpdate(
+        BodyWeightEntriesCompanion.insert(
+          id: id,
+          weightKg: weightKg,
+          recordedAt: recordedAt,
+        ),
+      );
+
+  Future<void> deleteBodyWeight(String id) async {
+    await (delete(bodyWeightEntries)..where((e) => e.id.equals(id))).go();
+  }
+
+  // ── History ──────────────────────────────────────────────────────────────
+
+  /// Finished sessions, newest first.
+  ///
+  /// Abandoned sessions are included: the sets in them are real work the user
+  /// did, and hiding them would make the history look like days were skipped.
+  /// In-progress ones are excluded — that is the resume banner's job.
+  Stream<List<WorkoutSession>> watchSessionHistory() => (select(workoutSessions)
+        ..where((s) => s.status.equals('in_progress').not())
+        ..orderBy([
+          (s) => OrderingTerm(expression: s.startedAt, mode: OrderingMode.desc),
+        ]))
+      .watch();
+
+  /// Every set for [exerciseId], oldest first — the shape a chart wants.
+  Stream<List<SetRecord>> watchSetsForExercise(String exerciseId) =>
+      (select(setRecords)
+            ..where((s) => s.exerciseId.equals(exerciseId))
+            ..orderBy([(s) => OrderingTerm(expression: s.recordedAt)]))
+          .watch();
+
+  /// Exercise ids that appear anywhere in the log, most recently used first.
+  ///
+  /// Drives the analytics picker, so it offers only exercises with something
+  /// to plot rather than all 87 in the catalog.
+  Future<List<String>> loggedExerciseIds() async {
+    final query = selectOnly(setRecords, distinct: true)
+      ..addColumns([setRecords.exerciseId, setRecords.recordedAt])
+      ..orderBy([
+        OrderingTerm(expression: setRecords.recordedAt, mode: OrderingMode.desc),
+      ]);
+    final rows = await query.map((r) => r.read(setRecords.exerciseId)!).get();
+    // DISTINCT covers (id, recordedAt) pairs, so ids still repeat here.
+    return LinkedHashSet<String>.from(rows).toList();
+  }
+
+  /// Wipes every user table. Used by import, which replaces rather than
+  /// merges — see `docs/PLAN.md` §6.1.
+  ///
+  /// The profile row is deleted too and re-inserted by the caller, so an
+  /// imported backup carries its own units and rest defaults rather than
+  /// keeping this device's.
+  Future<void> deleteEverything() async {
+    await transaction(() async {
+      // Sets cascade from sessions, but the delete is explicit so this does
+      // not silently depend on the foreign_keys pragma being on.
+      await delete(setRecords).go();
+      await delete(workoutSessions).go();
+      await delete(exerciseStates).go();
+      await delete(progressionConfigs).go();
+      await delete(bodyWeightEntries).go();
+      await delete(userProfiles).go();
+    });
   }
 }

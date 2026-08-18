@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
+import '../domain/backup.dart';
+import '../domain/units.dart';
 import '../providers.dart';
+import '../state/timer_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -11,6 +14,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
+    final units = ref.watch(unitSystemProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: profile.when(
@@ -57,18 +61,142 @@ class SettingsScreen extends ConsumerWidget {
                     );
               },
             ),
-            ListTile(
-              title: const Text('Rest between pair exercises'),
-              trailing: Text('${p.defaultPairRestSeconds}s'),
-              enabled: false,
+            _RestSetting(
+              label: 'Rest between pair exercises',
+              seconds: p.defaultPairRestSeconds,
+              onChanged: (v) => ref.read(databaseProvider).updateProfile(
+                    UserProfilesCompanion(defaultPairRestSeconds: Value(v)),
+                  ),
             ),
-            ListTile(
-              title: const Text('Rest between core exercises'),
-              trailing: Text('${p.defaultTripletRestSeconds}s'),
-              enabled: false,
+            _RestSetting(
+              label: 'Rest between core exercises',
+              seconds: p.defaultTripletRestSeconds,
+              onChanged: (v) => ref.read(databaseProvider).updateProfile(
+                    UserProfilesCompanion(defaultTripletRestSeconds: Value(v)),
+                  ),
             ),
+            const Divider(height: 32),
+            const _SectionHeader('You'),
+            ListTile(
+              title: const Text('Height'),
+              subtitle: const Text('Sharpens nothing yet — kept for the record.'),
+              trailing: Text(_heightLabel(p.heightCm, units)),
+              onTap: () => _editHeight(context, ref, p.heightCm, units),
+            ),
+            const Divider(height: 32),
+            const _SectionHeader('Backup'),
+            const _BackupSection(),
+            const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  static String _heightLabel(double? cm, UnitSystem units) {
+    if (cm == null) return 'Not set';
+    if (units == UnitSystem.metric) return '${cm.round()} cm';
+    final totalInches = cm / 2.54;
+    final feet = totalInches ~/ 12;
+    final inches = (totalInches % 12).round();
+    return "$feet'$inches\"";
+  }
+
+  static Future<void> _editHeight(
+    BuildContext context,
+    WidgetRef ref,
+    double? current,
+    UnitSystem units,
+  ) async {
+    final imperial = units == UnitSystem.imperial;
+    final controller = TextEditingController(
+      text: current == null
+          ? ''
+          : (imperial ? current / 2.54 : current).toStringAsFixed(0),
+    );
+
+    final entered = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Height'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            suffixText: imperial ? 'in' : 'cm',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext)
+                .pop(double.tryParse(controller.text.trim())),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (entered == null || entered <= 0) return;
+    await ref.read(databaseProvider).updateProfile(
+          UserProfilesCompanion(
+            heightCm: Value(imperial ? entered * 2.54 : entered),
+          ),
+        );
+  }
+}
+
+/// Rest length, adjusted in 15-second steps.
+///
+/// A slider would imply more precision than anyone wants here — rest is set
+/// once and then left alone, and the RR's own numbers are round.
+class _RestSetting extends StatelessWidget {
+  const _RestSetting({
+    required this.label,
+    required this.seconds,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int seconds;
+  final ValueChanged<int> onChanged;
+
+  static const _step = 15;
+  static const _min = 30;
+  static const _max = 300;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(label),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            onPressed:
+                seconds > _min ? () => onChanged(seconds - _step) : null,
+          ),
+          SizedBox(
+            width: 48,
+            child: Text(
+              '${seconds}s',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed:
+                seconds < _max ? () => onChanged(seconds + _step) : null,
+          ),
+        ],
       ),
     );
   }
@@ -90,5 +218,120 @@ class _SectionHeader extends StatelessWidget {
             ?.copyWith(color: theme.colorScheme.primary),
       ),
     );
+  }
+}
+
+/// Export and import.
+///
+/// Import replaces everything, so the confirmation names what is about to be
+/// destroyed and what will take its place. "Are you sure?" is not a warning;
+/// "this deletes 47 sessions" is.
+class _BackupSection extends ConsumerStatefulWidget {
+  const _BackupSection();
+
+  @override
+  ConsumerState<_BackupSection> createState() => _BackupSectionState();
+}
+
+class _BackupSectionState extends ConsumerState<_BackupSection> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.ios_share),
+          title: const Text('Export'),
+          subtitle: const Text('Everything, as one JSON file.'),
+          enabled: !_busy,
+          onTap: _busy ? null : _export,
+        ),
+        ListTile(
+          leading: const Icon(Icons.download_outlined),
+          title: const Text('Import'),
+          subtitle: const Text('Replaces all data on this device.'),
+          enabled: !_busy,
+          onTap: _busy ? null : _import,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _export() async {
+    setState(() => _busy = true);
+    try {
+      final db = ref.read(databaseProvider);
+      final now = ref.read(clockProvider).now();
+      final json = await exportBackup(db, now: now);
+      await ref.read(backupFilesProvider).share(backupFileName(now), json);
+    } catch (error) {
+      _say('Export failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _import() async {
+    setState(() => _busy = true);
+    try {
+      final json = await ref.read(backupFilesProvider).pickAndRead();
+      if (json == null) return; // Cancelled.
+
+      // Parsed before anything is destroyed, so a bad file is rejected while
+      // the user still has their data.
+      final incoming = inspectBackup(json);
+
+      // Counted straight from the database, not from sessionHistoryProvider.
+      // This screen never watches that provider, and Riverpod auto-disposes
+      // one with no listeners — so `read` returns AsyncLoading and the count
+      // comes back 0. A confirmation that promises to delete "0 sessions"
+      // immediately before wiping a year of training is the one place in the
+      // app where being wrong is unforgivable.
+      final db = ref.read(databaseProvider);
+      final existing = (await db.select(db.workoutSessions).get()).length;
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Replace everything?'),
+          content: Text(
+            'This deletes the $existing session${existing == 1 ? '' : 's'} on '
+            'this device and replaces them with '
+            '${incoming.sessionCount} from the backup'
+            '${incoming.exportedAt == null ? '' : ' taken '
+                '${incoming.exportedAt!.day}/${incoming.exportedAt!.month}/'
+                '${incoming.exportedAt!.year}'}.\n\n'
+            'This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Replace'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      await restoreBackup(ref.read(databaseProvider), json);
+      _say('Imported ${incoming.sessionCount} sessions.');
+    } on BackupError catch (error) {
+      _say(error.message);
+    } catch (error) {
+      _say('Import failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 }
