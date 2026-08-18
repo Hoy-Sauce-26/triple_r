@@ -739,6 +739,27 @@ Nothing is left assumed.
 - Warmup completion is session-scoped and never persisted, as §3 specified;
   it resets when the user leaves the warmup.
 
+**Added during Phase 6 implementation**
+
+- **Haptics became a service** (`lib/services/haptics.dart`) rather than
+  scattered `HapticFeedback` calls, for the same reason as `Alerts`: it is a
+  platform channel that throws in the test VM, so feedback was otherwise
+  untestable. Vocabulary kept to three — confirm, warn, transition — because
+  buzzing at every tap trains people to ignore it.
+- **An offline guard test.** The plan called for a manual airplane-mode pass;
+  that verifies once and decays immediately. `test/offline_test.dart` scans
+  the source for networking packages, `dart:io` network types, and the
+  `INTERNET` permission instead.
+- **Tabular figures centralised** into a `TextStyle.tabular` extension. Five
+  screens had copy-pasted the `fontFeatures` argument; without it a counting
+  timer visibly jitters as digit widths change.
+- **A first-run card** on the dashboard. Every path starts at its easiest
+  exercise, which is right as a default and wrong for most people — someone
+  who can already do pull-ups should not spend session one on scapular pulls.
+- The theme docstring claimed the seed colour was deliberately identical to
+  Roamfree's. It is no longer; the comment now describes what actually keeps
+  the two apps siblings.
+
 **Added during Phase 2 implementation**
 
 - **Branch-end mastery.** The advancement rule had no answer for the ~24

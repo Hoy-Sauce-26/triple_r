@@ -12,6 +12,7 @@ import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/tree_types.dart';
 import '../widgets/number_entry_dialog.dart';
+import '../theme.dart';
 import 'session_summary_screen.dart';
 
 /// The guided workout: one set at a time, with the rest timer between.
@@ -64,6 +65,7 @@ class ActiveWorkoutScreen extends ConsumerWidget {
 
   Future<void> _confirmEnd(BuildContext context, WidgetRef ref) async {
     final logged = ref.read(currentSessionSetsProvider).value?.length ?? 0;
+    ref.read(hapticsProvider).warn().ignore();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -103,9 +105,7 @@ class _SessionElapsed extends ConsumerWidget {
     final elapsed = ref.read(sessionClockProvider.notifier).elapsed;
     return Text(
       formatDuration(elapsed),
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+      style: Theme.of(context).textTheme.titleMedium?.tabular,
     );
   }
 }
@@ -203,21 +203,29 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
           children: [
             IconButton.filledTonal(
               icon: const Icon(Icons.remove),
+              tooltip: timed ? 'One second fewer' : 'One rep fewer',
               onPressed: suggested == null || suggested <= 0
                   ? null
                   : () => setState(() => _value = suggested - 1),
             ),
             Expanded(
-              child: Text(
-                '${suggested ?? 0}${timed ? 's' : ''}',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              child: Semantics(
+                // Otherwise a screen reader reads a bare "8" between two
+                // unlabelled buttons, with nothing saying what it counts.
+                label: timed
+                    ? '${suggested ?? 0} seconds'
+                    : '${suggested ?? 0} reps',
+                excludeSemantics: true,
+                child: Text(
+                  '${suggested ?? 0}${timed ? 's' : ''}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.displaySmall?.tabular,
                 ),
               ),
             ),
             IconButton.filledTonal(
               icon: const Icon(Icons.add),
+              tooltip: timed ? 'One second more' : 'One rep more',
               onPressed: () => setState(() => _value = (suggested ?? 0) + 1),
             ),
           ],
@@ -239,6 +247,15 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
           onPressed: () async {
             final entered = suggested ?? 0;
             final weight = double.tryParse(_weight.text) ?? 0;
+            // Confirmed by touch: the user is often looking at the bar, not
+            // the phone, and needs to know the tap registered without
+            // checking.
+            //
+            // `ignore()` rather than `await`. Feedback must never sit between
+            // the tap and the work it confirms — awaiting a platform channel
+            // here means a device that answers slowly (or, in a test, never)
+            // silently swallows the set instead of logging it.
+            ref.read(hapticsProvider).confirm().ignore();
             await ref.read(activeSessionProvider.notifier).logSet(
                   reps: timed ? null : entered,
                   holdSeconds: timed ? entered : null,
@@ -354,9 +371,7 @@ class _RestOverlay extends ConsumerWidget {
                     ),
                     Text(
                       formatDuration(remaining),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
+                      style: theme.textTheme.headlineMedium?.tabular,
                     ),
                   ],
                 ),

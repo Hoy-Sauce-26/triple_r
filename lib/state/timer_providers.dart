@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/countdown.dart';
 import '../services/alerts.dart';
 import '../services/clock.dart';
+import '../services/haptics.dart';
 import '../services/screen_wake.dart';
 
 /// All overridden in tests with fakes; the platform implementations here are
@@ -10,6 +11,7 @@ import '../services/screen_wake.dart';
 final clockProvider = Provider<Clock>((ref) => const SystemClock());
 final tickerProvider = Provider<Ticker>((ref) => const SystemTicker());
 final screenWakeProvider = Provider<ScreenWake>((ref) => const PlatformScreenWake());
+final hapticsProvider = Provider<Haptics>((ref) => const PlatformHaptics());
 
 final alertsProvider = Provider<Alerts>((ref) {
   final alerts = PlatformAlerts();

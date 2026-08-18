@@ -6,6 +6,7 @@ import '../providers.dart';
 import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/tree_types.dart';
+import '../theme.dart';
 import 'active_workout_screen.dart';
 
 /// Which warmup items the user has ticked off this session.
@@ -66,9 +67,7 @@ class WarmupScreen extends ConsumerWidget {
         actions: [
           Text(
             formatDuration(elapsed),
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: theme.textTheme.titleMedium?.tabular,
           ),
           const SizedBox(width: 12),
           Padding(
@@ -224,10 +223,8 @@ class _HoldButtonState extends ConsumerState<_HoldButton> {
         icon: const Icon(Icons.stop, size: 18),
         label: Text(
           formatDuration(controller.remaining),
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.primary,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+          style: theme.textTheme.titleMedium?.tabular
+              .copyWith(color: theme.colorScheme.primary),
         ),
       );
     }
