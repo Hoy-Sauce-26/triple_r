@@ -20,17 +20,6 @@ class $UserProfilesTable extends UserProfiles
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
-  static const VerificationMeta _heightCmMeta = const VerificationMeta(
-    'heightCm',
-  );
-  @override
-  late final GeneratedColumn<double> heightCm = GeneratedColumn<double>(
-    'height_cm',
-    aliasedName,
-    true,
-    type: DriftSqlType.double,
-    requiredDuringInsert: false,
-  );
   static const VerificationMeta _unitSystemMeta = const VerificationMeta(
     'unitSystem',
   );
@@ -88,7 +77,6 @@ class $UserProfilesTable extends UserProfiles
   @override
   List<GeneratedColumn> get $columns => [
     id,
-    heightCm,
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
@@ -108,12 +96,6 @@ class $UserProfilesTable extends UserProfiles
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('height_cm')) {
-      context.handle(
-        _heightCmMeta,
-        heightCm.isAcceptableOrUnknown(data['height_cm']!, _heightCmMeta),
-      );
     }
     if (data.containsKey('unit_system')) {
       context.handle(
@@ -161,10 +143,6 @@ class $UserProfilesTable extends UserProfiles
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
-      heightCm: attachedDatabase.typeMapping.read(
-        DriftSqlType.double,
-        data['${effectivePrefix}height_cm'],
-      ),
       unitSystem: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}unit_system'],
@@ -193,10 +171,6 @@ class $UserProfilesTable extends UserProfiles
 class UserProfile extends DataClass implements Insertable<UserProfile> {
   final int id;
 
-  /// Null until the user personalizes. Height does not change for adults, so
-  /// it lives here rather than in a time series.
-  final double? heightCm;
-
   /// 'imperial' | 'metric'. Imperial is the default.
   final String unitSystem;
   final int defaultPairRestSeconds;
@@ -207,7 +181,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   final bool rotatePairOrder;
   const UserProfile({
     required this.id,
-    this.heightCm,
     required this.unitSystem,
     required this.defaultPairRestSeconds,
     required this.defaultTripletRestSeconds,
@@ -217,9 +190,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    if (!nullToAbsent || heightCm != null) {
-      map['height_cm'] = Variable<double>(heightCm);
-    }
     map['unit_system'] = Variable<String>(unitSystem);
     map['default_pair_rest_seconds'] = Variable<int>(defaultPairRestSeconds);
     map['default_triplet_rest_seconds'] = Variable<int>(
@@ -232,9 +202,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   UserProfilesCompanion toCompanion(bool nullToAbsent) {
     return UserProfilesCompanion(
       id: Value(id),
-      heightCm: heightCm == null && nullToAbsent
-          ? const Value.absent()
-          : Value(heightCm),
       unitSystem: Value(unitSystem),
       defaultPairRestSeconds: Value(defaultPairRestSeconds),
       defaultTripletRestSeconds: Value(defaultTripletRestSeconds),
@@ -249,7 +216,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserProfile(
       id: serializer.fromJson<int>(json['id']),
-      heightCm: serializer.fromJson<double?>(json['heightCm']),
       unitSystem: serializer.fromJson<String>(json['unitSystem']),
       defaultPairRestSeconds: serializer.fromJson<int>(
         json['defaultPairRestSeconds'],
@@ -265,7 +231,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'heightCm': serializer.toJson<double?>(heightCm),
       'unitSystem': serializer.toJson<String>(unitSystem),
       'defaultPairRestSeconds': serializer.toJson<int>(defaultPairRestSeconds),
       'defaultTripletRestSeconds': serializer.toJson<int>(
@@ -277,14 +242,12 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
 
   UserProfile copyWith({
     int? id,
-    Value<double?> heightCm = const Value.absent(),
     String? unitSystem,
     int? defaultPairRestSeconds,
     int? defaultTripletRestSeconds,
     bool? rotatePairOrder,
   }) => UserProfile(
     id: id ?? this.id,
-    heightCm: heightCm.present ? heightCm.value : this.heightCm,
     unitSystem: unitSystem ?? this.unitSystem,
     defaultPairRestSeconds:
         defaultPairRestSeconds ?? this.defaultPairRestSeconds,
@@ -295,7 +258,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   UserProfile copyWithCompanion(UserProfilesCompanion data) {
     return UserProfile(
       id: data.id.present ? data.id.value : this.id,
-      heightCm: data.heightCm.present ? data.heightCm.value : this.heightCm,
       unitSystem: data.unitSystem.present
           ? data.unitSystem.value
           : this.unitSystem,
@@ -315,7 +277,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   String toString() {
     return (StringBuffer('UserProfile(')
           ..write('id: $id, ')
-          ..write('heightCm: $heightCm, ')
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
@@ -327,7 +288,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   @override
   int get hashCode => Object.hash(
     id,
-    heightCm,
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
@@ -338,7 +298,6 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       identical(this, other) ||
       (other is UserProfile &&
           other.id == this.id &&
-          other.heightCm == this.heightCm &&
           other.unitSystem == this.unitSystem &&
           other.defaultPairRestSeconds == this.defaultPairRestSeconds &&
           other.defaultTripletRestSeconds == this.defaultTripletRestSeconds &&
@@ -347,14 +306,12 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
 
 class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   final Value<int> id;
-  final Value<double?> heightCm;
   final Value<String> unitSystem;
   final Value<int> defaultPairRestSeconds;
   final Value<int> defaultTripletRestSeconds;
   final Value<bool> rotatePairOrder;
   const UserProfilesCompanion({
     this.id = const Value.absent(),
-    this.heightCm = const Value.absent(),
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
@@ -362,7 +319,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   });
   UserProfilesCompanion.insert({
     this.id = const Value.absent(),
-    this.heightCm = const Value.absent(),
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
@@ -370,7 +326,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   });
   static Insertable<UserProfile> custom({
     Expression<int>? id,
-    Expression<double>? heightCm,
     Expression<String>? unitSystem,
     Expression<int>? defaultPairRestSeconds,
     Expression<int>? defaultTripletRestSeconds,
@@ -378,7 +333,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (heightCm != null) 'height_cm': heightCm,
       if (unitSystem != null) 'unit_system': unitSystem,
       if (defaultPairRestSeconds != null)
         'default_pair_rest_seconds': defaultPairRestSeconds,
@@ -390,7 +344,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
 
   UserProfilesCompanion copyWith({
     Value<int>? id,
-    Value<double?>? heightCm,
     Value<String>? unitSystem,
     Value<int>? defaultPairRestSeconds,
     Value<int>? defaultTripletRestSeconds,
@@ -398,7 +351,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   }) {
     return UserProfilesCompanion(
       id: id ?? this.id,
-      heightCm: heightCm ?? this.heightCm,
       unitSystem: unitSystem ?? this.unitSystem,
       defaultPairRestSeconds:
           defaultPairRestSeconds ?? this.defaultPairRestSeconds,
@@ -413,9 +365,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
-    }
-    if (heightCm.present) {
-      map['height_cm'] = Variable<double>(heightCm.value);
     }
     if (unitSystem.present) {
       map['unit_system'] = Variable<String>(unitSystem.value);
@@ -440,7 +389,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   String toString() {
     return (StringBuffer('UserProfilesCompanion(')
           ..write('id: $id, ')
-          ..write('heightCm: $heightCm, ')
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
@@ -1568,6 +1516,17 @@ class $WorkoutSessionsTable extends WorkoutSessions
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sessionOrdinalMeta = const VerificationMeta(
+    'sessionOrdinal',
+  );
+  @override
+  late final GeneratedColumn<int> sessionOrdinal = GeneratedColumn<int>(
+    'session_ordinal',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _pairRestSecondsMeta = const VerificationMeta(
     'pairRestSeconds',
   );
@@ -1607,6 +1566,7 @@ class $WorkoutSessionsTable extends WorkoutSessions
     endedAt,
     status,
     rotationIndex,
+    sessionOrdinal,
     pairRestSeconds,
     tripletRestSeconds,
     cursorJson,
@@ -1660,6 +1620,15 @@ class $WorkoutSessionsTable extends WorkoutSessions
       );
     } else if (isInserting) {
       context.missing(_rotationIndexMeta);
+    }
+    if (data.containsKey('session_ordinal')) {
+      context.handle(
+        _sessionOrdinalMeta,
+        sessionOrdinal.isAcceptableOrUnknown(
+          data['session_ordinal']!,
+          _sessionOrdinalMeta,
+        ),
+      );
     }
     if (data.containsKey('pair_rest_seconds')) {
       context.handle(
@@ -1718,6 +1687,10 @@ class $WorkoutSessionsTable extends WorkoutSessions
         DriftSqlType.int,
         data['${effectivePrefix}rotation_index'],
       )!,
+      sessionOrdinal: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}session_ordinal'],
+      ),
       pairRestSeconds: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}pair_rest_seconds'],
@@ -1753,6 +1726,16 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
   /// Which pair order this session used. Stored rather than recomputed so
   /// history stays truthful if the completed-session count later changes.
   final int rotationIndex;
+
+  /// Which session number this workout was, counting from the first ever.
+  ///
+  /// Not the same as the number of rows before it. A user who trains without
+  /// logging can start the workout they are actually due, which advances this
+  /// past the row count — and the next session must carry on from here rather
+  /// than from a count that never saw the missed day.
+  ///
+  /// Nullable only for rows written before the column existed.
+  final int? sessionOrdinal;
   final int pairRestSeconds;
   final int tripletRestSeconds;
 
@@ -1764,6 +1747,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
     this.endedAt,
     required this.status,
     required this.rotationIndex,
+    this.sessionOrdinal,
     required this.pairRestSeconds,
     required this.tripletRestSeconds,
     this.cursorJson,
@@ -1778,6 +1762,9 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
     }
     map['status'] = Variable<String>(status);
     map['rotation_index'] = Variable<int>(rotationIndex);
+    if (!nullToAbsent || sessionOrdinal != null) {
+      map['session_ordinal'] = Variable<int>(sessionOrdinal);
+    }
     map['pair_rest_seconds'] = Variable<int>(pairRestSeconds);
     map['triplet_rest_seconds'] = Variable<int>(tripletRestSeconds);
     if (!nullToAbsent || cursorJson != null) {
@@ -1795,6 +1782,9 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
           : Value(endedAt),
       status: Value(status),
       rotationIndex: Value(rotationIndex),
+      sessionOrdinal: sessionOrdinal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sessionOrdinal),
       pairRestSeconds: Value(pairRestSeconds),
       tripletRestSeconds: Value(tripletRestSeconds),
       cursorJson: cursorJson == null && nullToAbsent
@@ -1814,6 +1804,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
       endedAt: serializer.fromJson<DateTime?>(json['endedAt']),
       status: serializer.fromJson<String>(json['status']),
       rotationIndex: serializer.fromJson<int>(json['rotationIndex']),
+      sessionOrdinal: serializer.fromJson<int?>(json['sessionOrdinal']),
       pairRestSeconds: serializer.fromJson<int>(json['pairRestSeconds']),
       tripletRestSeconds: serializer.fromJson<int>(json['tripletRestSeconds']),
       cursorJson: serializer.fromJson<String?>(json['cursorJson']),
@@ -1828,6 +1819,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
       'endedAt': serializer.toJson<DateTime?>(endedAt),
       'status': serializer.toJson<String>(status),
       'rotationIndex': serializer.toJson<int>(rotationIndex),
+      'sessionOrdinal': serializer.toJson<int?>(sessionOrdinal),
       'pairRestSeconds': serializer.toJson<int>(pairRestSeconds),
       'tripletRestSeconds': serializer.toJson<int>(tripletRestSeconds),
       'cursorJson': serializer.toJson<String?>(cursorJson),
@@ -1840,6 +1832,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
     Value<DateTime?> endedAt = const Value.absent(),
     String? status,
     int? rotationIndex,
+    Value<int?> sessionOrdinal = const Value.absent(),
     int? pairRestSeconds,
     int? tripletRestSeconds,
     Value<String?> cursorJson = const Value.absent(),
@@ -1849,6 +1842,9 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
     endedAt: endedAt.present ? endedAt.value : this.endedAt,
     status: status ?? this.status,
     rotationIndex: rotationIndex ?? this.rotationIndex,
+    sessionOrdinal: sessionOrdinal.present
+        ? sessionOrdinal.value
+        : this.sessionOrdinal,
     pairRestSeconds: pairRestSeconds ?? this.pairRestSeconds,
     tripletRestSeconds: tripletRestSeconds ?? this.tripletRestSeconds,
     cursorJson: cursorJson.present ? cursorJson.value : this.cursorJson,
@@ -1862,6 +1858,9 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
       rotationIndex: data.rotationIndex.present
           ? data.rotationIndex.value
           : this.rotationIndex,
+      sessionOrdinal: data.sessionOrdinal.present
+          ? data.sessionOrdinal.value
+          : this.sessionOrdinal,
       pairRestSeconds: data.pairRestSeconds.present
           ? data.pairRestSeconds.value
           : this.pairRestSeconds,
@@ -1882,6 +1881,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
           ..write('endedAt: $endedAt, ')
           ..write('status: $status, ')
           ..write('rotationIndex: $rotationIndex, ')
+          ..write('sessionOrdinal: $sessionOrdinal, ')
           ..write('pairRestSeconds: $pairRestSeconds, ')
           ..write('tripletRestSeconds: $tripletRestSeconds, ')
           ..write('cursorJson: $cursorJson')
@@ -1896,6 +1896,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
     endedAt,
     status,
     rotationIndex,
+    sessionOrdinal,
     pairRestSeconds,
     tripletRestSeconds,
     cursorJson,
@@ -1909,6 +1910,7 @@ class WorkoutSession extends DataClass implements Insertable<WorkoutSession> {
           other.endedAt == this.endedAt &&
           other.status == this.status &&
           other.rotationIndex == this.rotationIndex &&
+          other.sessionOrdinal == this.sessionOrdinal &&
           other.pairRestSeconds == this.pairRestSeconds &&
           other.tripletRestSeconds == this.tripletRestSeconds &&
           other.cursorJson == this.cursorJson);
@@ -1920,6 +1922,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
   final Value<DateTime?> endedAt;
   final Value<String> status;
   final Value<int> rotationIndex;
+  final Value<int?> sessionOrdinal;
   final Value<int> pairRestSeconds;
   final Value<int> tripletRestSeconds;
   final Value<String?> cursorJson;
@@ -1930,6 +1933,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
     this.endedAt = const Value.absent(),
     this.status = const Value.absent(),
     this.rotationIndex = const Value.absent(),
+    this.sessionOrdinal = const Value.absent(),
     this.pairRestSeconds = const Value.absent(),
     this.tripletRestSeconds = const Value.absent(),
     this.cursorJson = const Value.absent(),
@@ -1941,6 +1945,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
     this.endedAt = const Value.absent(),
     required String status,
     required int rotationIndex,
+    this.sessionOrdinal = const Value.absent(),
     required int pairRestSeconds,
     required int tripletRestSeconds,
     this.cursorJson = const Value.absent(),
@@ -1957,6 +1962,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
     Expression<DateTime>? endedAt,
     Expression<String>? status,
     Expression<int>? rotationIndex,
+    Expression<int>? sessionOrdinal,
     Expression<int>? pairRestSeconds,
     Expression<int>? tripletRestSeconds,
     Expression<String>? cursorJson,
@@ -1968,6 +1974,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
       if (endedAt != null) 'ended_at': endedAt,
       if (status != null) 'status': status,
       if (rotationIndex != null) 'rotation_index': rotationIndex,
+      if (sessionOrdinal != null) 'session_ordinal': sessionOrdinal,
       if (pairRestSeconds != null) 'pair_rest_seconds': pairRestSeconds,
       if (tripletRestSeconds != null)
         'triplet_rest_seconds': tripletRestSeconds,
@@ -1982,6 +1989,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
     Value<DateTime?>? endedAt,
     Value<String>? status,
     Value<int>? rotationIndex,
+    Value<int?>? sessionOrdinal,
     Value<int>? pairRestSeconds,
     Value<int>? tripletRestSeconds,
     Value<String?>? cursorJson,
@@ -1993,6 +2001,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
       endedAt: endedAt ?? this.endedAt,
       status: status ?? this.status,
       rotationIndex: rotationIndex ?? this.rotationIndex,
+      sessionOrdinal: sessionOrdinal ?? this.sessionOrdinal,
       pairRestSeconds: pairRestSeconds ?? this.pairRestSeconds,
       tripletRestSeconds: tripletRestSeconds ?? this.tripletRestSeconds,
       cursorJson: cursorJson ?? this.cursorJson,
@@ -2018,6 +2027,9 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
     if (rotationIndex.present) {
       map['rotation_index'] = Variable<int>(rotationIndex.value);
     }
+    if (sessionOrdinal.present) {
+      map['session_ordinal'] = Variable<int>(sessionOrdinal.value);
+    }
     if (pairRestSeconds.present) {
       map['pair_rest_seconds'] = Variable<int>(pairRestSeconds.value);
     }
@@ -2041,6 +2053,7 @@ class WorkoutSessionsCompanion extends UpdateCompanion<WorkoutSession> {
           ..write('endedAt: $endedAt, ')
           ..write('status: $status, ')
           ..write('rotationIndex: $rotationIndex, ')
+          ..write('sessionOrdinal: $sessionOrdinal, ')
           ..write('pairRestSeconds: $pairRestSeconds, ')
           ..write('tripletRestSeconds: $tripletRestSeconds, ')
           ..write('cursorJson: $cursorJson, ')
@@ -2670,7 +2683,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 typedef $$UserProfilesTableCreateCompanionBuilder =
     UserProfilesCompanion Function({
       Value<int> id,
-      Value<double?> heightCm,
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
@@ -2679,7 +2691,6 @@ typedef $$UserProfilesTableCreateCompanionBuilder =
 typedef $$UserProfilesTableUpdateCompanionBuilder =
     UserProfilesCompanion Function({
       Value<int> id,
-      Value<double?> heightCm,
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
@@ -2697,11 +2708,6 @@ class $$UserProfilesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<double> get heightCm => $composableBuilder(
-    column: $table.heightCm,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2740,11 +2746,6 @@ class $$UserProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<double> get heightCm => $composableBuilder(
-    column: $table.heightCm,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get unitSystem => $composableBuilder(
     column: $table.unitSystem,
     builder: (column) => ColumnOrderings(column),
@@ -2777,9 +2778,6 @@ class $$UserProfilesTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<double> get heightCm =>
-      $composableBuilder(column: $table.heightCm, builder: (column) => column);
 
   GeneratedColumn<String> get unitSystem => $composableBuilder(
     column: $table.unitSystem,
@@ -2834,14 +2832,12 @@ class $$UserProfilesTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<double?> heightCm = const Value.absent(),
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion(
                 id: id,
-                heightCm: heightCm,
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
@@ -2850,14 +2846,12 @@ class $$UserProfilesTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<double?> heightCm = const Value.absent(),
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion.insert(
                 id: id,
-                heightCm: heightCm,
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
@@ -3497,6 +3491,7 @@ typedef $$WorkoutSessionsTableCreateCompanionBuilder =
       Value<DateTime?> endedAt,
       required String status,
       required int rotationIndex,
+      Value<int?> sessionOrdinal,
       required int pairRestSeconds,
       required int tripletRestSeconds,
       Value<String?> cursorJson,
@@ -3509,6 +3504,7 @@ typedef $$WorkoutSessionsTableUpdateCompanionBuilder =
       Value<DateTime?> endedAt,
       Value<String> status,
       Value<int> rotationIndex,
+      Value<int?> sessionOrdinal,
       Value<int> pairRestSeconds,
       Value<int> tripletRestSeconds,
       Value<String?> cursorJson,
@@ -3574,6 +3570,11 @@ class $$WorkoutSessionsTableFilterComposer
 
   ColumnFilters<int> get rotationIndex => $composableBuilder(
     column: $table.rotationIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sessionOrdinal => $composableBuilder(
+    column: $table.sessionOrdinal,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3652,6 +3653,11 @@ class $$WorkoutSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sessionOrdinal => $composableBuilder(
+    column: $table.sessionOrdinal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get pairRestSeconds => $composableBuilder(
     column: $table.pairRestSeconds,
     builder: (column) => ColumnOrderings(column),
@@ -3691,6 +3697,11 @@ class $$WorkoutSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get rotationIndex => $composableBuilder(
     column: $table.rotationIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sessionOrdinal => $composableBuilder(
+    column: $table.sessionOrdinal,
     builder: (column) => column,
   );
 
@@ -3770,6 +3781,7 @@ class $$WorkoutSessionsTableTableManager
                 Value<DateTime?> endedAt = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<int> rotationIndex = const Value.absent(),
+                Value<int?> sessionOrdinal = const Value.absent(),
                 Value<int> pairRestSeconds = const Value.absent(),
                 Value<int> tripletRestSeconds = const Value.absent(),
                 Value<String?> cursorJson = const Value.absent(),
@@ -3780,6 +3792,7 @@ class $$WorkoutSessionsTableTableManager
                 endedAt: endedAt,
                 status: status,
                 rotationIndex: rotationIndex,
+                sessionOrdinal: sessionOrdinal,
                 pairRestSeconds: pairRestSeconds,
                 tripletRestSeconds: tripletRestSeconds,
                 cursorJson: cursorJson,
@@ -3792,6 +3805,7 @@ class $$WorkoutSessionsTableTableManager
                 Value<DateTime?> endedAt = const Value.absent(),
                 required String status,
                 required int rotationIndex,
+                Value<int?> sessionOrdinal = const Value.absent(),
                 required int pairRestSeconds,
                 required int tripletRestSeconds,
                 Value<String?> cursorJson = const Value.absent(),
@@ -3802,6 +3816,7 @@ class $$WorkoutSessionsTableTableManager
                 endedAt: endedAt,
                 status: status,
                 rotationIndex: rotationIndex,
+                sessionOrdinal: sessionOrdinal,
                 pairRestSeconds: pairRestSeconds,
                 tripletRestSeconds: tripletRestSeconds,
                 cursorJson: cursorJson,

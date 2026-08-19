@@ -37,7 +37,6 @@ Future<String> exportBackup(AppDatabase db, {DateTime? now}) async {
     'schemaVersion': db.schemaVersion,
     'exportedAt': (now ?? DateTime.now()).toIso8601String(),
     'profile': {
-      'heightCm': profile.heightCm,
       'unitSystem': profile.unitSystem,
       'defaultPairRestSeconds': profile.defaultPairRestSeconds,
       'defaultTripletRestSeconds': profile.defaultTripletRestSeconds,
@@ -173,7 +172,6 @@ Future<void> restoreBackup(AppDatabase db, String json) async {
     final profile = _map(document['profile']);
     await db.into(db.userProfiles).insert(
           UserProfilesCompanion.insert(
-            heightCm: Value(_toDouble(profile['heightCm'])),
             unitSystem: Value(profile['unitSystem'] as String? ?? 'imperial'),
             defaultPairRestSeconds:
                 Value(profile['defaultPairRestSeconds'] as int? ?? 90),

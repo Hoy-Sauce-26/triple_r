@@ -6,7 +6,7 @@ import 'package:drift/drift.dart';
 /// user, so a table with an id column is really just a typed key-value store
 /// that drift can migrate.
 ///
-/// Weights and heights are stored in SI regardless of [unitSystem], which
+/// Weights are stored in SI regardless of [unitSystem], which
 /// controls display only. See `docs/PLAN.md` §2.2.1 for why arithmetic on
 /// loads happens in the display unit rather than in kg.
 @DataClassName('UserProfile')
@@ -17,10 +17,6 @@ class UserProfiles extends Table {
   // never actually recurses. The lint cannot see that.
   // ignore: recursive_getters
   IntColumn get id => integer().check(id.equals(1)).withDefault(const Constant(1))();
-
-  /// Null until the user personalizes. Height does not change for adults, so
-  /// it lives here rather than in a time series.
-  RealColumn get heightCm => real().nullable()();
 
   /// 'imperial' | 'metric'. Imperial is the default.
   TextColumn get unitSystem =>
@@ -38,7 +34,8 @@ class UserProfiles extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-/// Body weight over time. Height is not here on purpose — it does not change
+/// Body weight over time. Only weight is tracked — height was dropped: it
+/// does not change
 /// for adults, so charting it would draw a flat line.
 @DataClassName('BodyWeightEntry')
 class BodyWeightEntries extends Table {
@@ -121,6 +118,16 @@ class WorkoutSessions extends Table {
   /// Which pair order this session used. Stored rather than recomputed so
   /// history stays truthful if the completed-session count later changes.
   IntColumn get rotationIndex => integer()();
+
+  /// Which session number this workout was, counting from the first ever.
+  ///
+  /// Not the same as the number of rows before it. A user who trains without
+  /// logging can start the workout they are actually due, which advances this
+  /// past the row count — and the next session must carry on from here rather
+  /// than from a count that never saw the missed day.
+  ///
+  /// Nullable only for rows written before the column existed.
+  IntColumn get sessionOrdinal => integer().nullable()();
 
   IntColumn get pairRestSeconds => integer()();
   IntColumn get tripletRestSeconds => integer()();

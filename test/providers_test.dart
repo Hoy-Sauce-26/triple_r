@@ -24,6 +24,8 @@ void main() {
     container.listen(profileProvider, (_, _) {});
     container.listen(pathPositionsProvider, (_, _) {});
     container.listen(completedSessionCountProvider, (_, _) {});
+    container.listen(sessionHistoryProvider, (_, _) {});
+    container.listen(nextSessionOrdinalProvider, (_, _) {});
   });
 
   tearDown(() {
@@ -35,6 +37,8 @@ void main() {
   Future<void> settle() async {
     await container.read(profileProvider.future);
     await container.read(completedSessionCountProvider.future);
+    await container.read(sessionHistoryProvider.future);
+    await container.read(nextSessionOrdinalProvider.future);
     await container.read(pathPositionsProvider.future);
   }
 
@@ -44,6 +48,19 @@ void main() {
   /// the stream's first value and hands back the stale one immediately.
   Future<void> settleAfterWrite() => pumpEventQueue();
 
+  /// Re-reads what a plan derives from after sessions are written directly.
+  ///
+  /// The session number now carries forward from the last completed row
+  /// rather than being counted, so both it and the raw count have to be
+  /// refreshed before the plan is read back.
+  Future<void> settleAfterSession() async {
+    await pumpEventQueue();
+    container.invalidate(completedSessionCountProvider);
+    container.invalidate(nextSessionOrdinalProvider);
+    await container.read(completedSessionCountProvider.future);
+    await container.read(nextSessionOrdinalProvider.future);
+  }
+
   Future<void> completeSessions(int count) async {
     for (var i = 0; i < count; i++) {
       await db.into(db.workoutSessions).insert(
@@ -52,6 +69,7 @@ void main() {
               startedAt: DateTime(2026, 3, i + 1),
               status: 'completed',
               rotationIndex: i % 3,
+              sessionOrdinal: Value(i),
               pairRestSeconds: 90,
               tripletRestSeconds: 60,
             ),
@@ -79,12 +97,44 @@ void main() {
     expect(container.read(nextSessionPlanProvider)!.rotationIndex, 0);
 
     await completeSessions(1);
-    container.invalidate(completedSessionCountProvider);
-    await container.read(completedSessionCountProvider.future);
+    await settleAfterSession();
 
     final plan = container.read(nextSessionPlanProvider)!;
     expect(plan.rotationIndex, 1);
     expect(plan.pairs.first.pathIds, ['dip', 'hinge']);
+  });
+
+  test('a workout started out of order still advances the sequence', () async {
+    // The rotation used to be counted from the rows, so finishing the workout
+    // you were actually due handed you the same one again: one row completed
+    // means "session 1", which is the workout just done.
+    await settle();
+    expect(container.read(nextSessionPlanProvider)!.rotationIndex, 0);
+
+    // Trained yesterday without logging it, so start workout 2 instead.
+    container.read(selectedRotationProvider.notifier).select(1);
+    expect(container.read(nextSessionPlanProvider)!.rotationIndex, 1);
+    expect(container.read(plannedSessionOrdinalProvider), 1);
+
+    await db.into(db.workoutSessions).insert(
+          WorkoutSessionsCompanion.insert(
+            id: 'out-of-order',
+            startedAt: DateTime(2026, 3, 2),
+            status: 'completed',
+            rotationIndex: 1,
+            sessionOrdinal: const Value(1),
+            pairRestSeconds: 90,
+            tripletRestSeconds: 60,
+          ),
+        );
+    container.read(selectedRotationProvider.notifier).clear();
+    await settleAfterSession();
+
+    expect(
+      container.read(nextSessionPlanProvider)!.rotationIndex,
+      2,
+      reason: 'the next workout carries on from the one actually done',
+    );
   });
 
   test('turning rotation off pins the book order', () async {
@@ -126,8 +176,7 @@ void main() {
     );
 
     await completeSessions(1);
-    container.invalidate(completedSessionCountProvider);
-    await container.read(completedSessionCountProvider.future);
+    await settleAfterSession();
 
     expect(
       container.read(nextSessionExercisesProvider)['hinge'],

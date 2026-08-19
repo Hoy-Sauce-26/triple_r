@@ -26,7 +26,6 @@ void main() {
     expect(profile.defaultPairRestSeconds, 90);
     expect(profile.defaultTripletRestSeconds, 60);
     expect(profile.rotatePairOrder, isTrue);
-    expect(profile.heightCm, isNull);
   });
 
   test('profile updates persist and reach watchers', () async {

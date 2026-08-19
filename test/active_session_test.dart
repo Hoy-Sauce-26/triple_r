@@ -9,6 +9,7 @@ import 'package:triple_r/providers.dart';
 import 'package:triple_r/services/alerts.dart';
 import 'package:triple_r/services/clock.dart';
 import 'package:triple_r/services/screen_wake.dart';
+import 'package:triple_r/services/workout_notification.dart';
 import 'package:triple_r/state/active_session.dart';
 import 'package:triple_r/state/timer_providers.dart';
 
@@ -18,6 +19,7 @@ void main() {
   late FakeClock clock;
   late FakeTicker ticker;
   late ProviderContainer container;
+  late FakeWorkoutNotification notifications;
 
   /// A container over the same fakes — used to simulate the app being killed
   /// and reopened onto an in-progress session.
@@ -28,6 +30,7 @@ void main() {
           tickerProvider.overrideWithValue(ticker),
           alertsProvider.overrideWithValue(RecordingAlerts()),
           screenWakeProvider.overrideWithValue(FakeScreenWake()),
+          workoutNotificationProvider.overrideWithValue(notifications),
         ],
       );
 
@@ -35,6 +38,7 @@ void main() {
     db = AppDatabase.memory();
     clock = FakeClock();
     ticker = FakeTicker();
+    notifications = FakeWorkoutNotification();
     container = freshContainer();
     // Riverpod 3 auto-disposes unlistened providers; without a subscription
     // the notifier is torn down between awaits.
@@ -521,6 +525,7 @@ void main() {
           id: 'done-$i',
           startedAt: clock.now(),
           rotationIndex: i % 3,
+          sessionOrdinal: i,
           pairRestSeconds: 90,
           tripletRestSeconds: 60,
           cursorJson: const SessionCursor().encode(),
@@ -539,6 +544,77 @@ void main() {
       final session = await resumed.read(activeSessionProvider.future);
 
       expect(session!.exerciseByPath['hinge'], atStart);
+    });
+  });
+
+  group('the ongoing notification', () {
+    test('names the current exercise while working', () async {
+      await controller().start();
+
+      expect(notifications.isShowing, isTrue);
+      expect(notifications.current, startsWith('Scapular Pulls'));
+      expect(
+        notifications.current,
+        contains('Pair 1 · set 1 of 3'),
+      );
+    });
+
+    test('becomes the rest countdown, naming what is coming next', () async {
+      await controller().start();
+      await controller().logSet(reps: 5, holdSeconds: null);
+
+      // Logging starts the 90s pair rest and moves to the paired exercise.
+      expect(notifications.current, startsWith('Resting · 1:30'));
+      expect(
+        notifications.current,
+        contains('Next up: Assisted Squats'),
+        reason: 'the exercise named is the one about to be worked',
+      );
+      expect(
+        notifications.current,
+        endsWith('0/90'),
+        reason: 'the bar tracks the rest while the rest is what is running',
+      );
+
+      clock.advance(const Duration(seconds: 30));
+      ticker.tick();
+      expect(notifications.current, startsWith('Resting · 1:00'));
+      expect(notifications.current, endsWith('30/90'));
+    });
+
+    test('five ticks a second do not become five notifications', () async {
+      await controller().start();
+      await controller().logSet(reps: 5, holdSeconds: null);
+      final before = notifications.shown.length;
+
+      // A whole second of ticks at the 200ms interval.
+      for (var i = 0; i < 5; i++) {
+        clock.advance(const Duration(milliseconds: 200));
+        ticker.tick();
+      }
+
+      expect(
+        notifications.shown.length - before,
+        1,
+        reason: 'only the whole second changed, so only one post',
+      );
+    });
+
+    test('goes back to the exercise once the rest is skipped', () async {
+      await controller().start();
+      await controller().logSet(reps: 5, holdSeconds: null);
+      container.read(restTimerProvider.notifier).skip();
+
+      expect(notifications.current, startsWith('Assisted Squats'));
+      expect(notifications.current, endsWith('1/27'));
+    });
+
+    test('is taken down when the workout ends', () async {
+      await controller().start();
+      await controller().finish(completed: true);
+
+      expect(notifications.isShowing, isFalse);
+      expect(notifications.clears, greaterThan(0));
     });
   });
 }

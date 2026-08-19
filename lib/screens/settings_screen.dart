@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
 import '../domain/backup.dart';
-import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
-import '../widgets/height_field.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -15,7 +13,6 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(profileProvider);
-    final units = ref.watch(unitSystemProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: profile.when(
@@ -77,14 +74,6 @@ class SettingsScreen extends ConsumerWidget {
                   ),
             ),
             const Divider(height: 32),
-            const _SectionHeader('You'),
-            ListTile(
-              title: const Text('Height'),
-              subtitle: const Text('Sharpens nothing yet — kept for the record.'),
-              trailing: Text(_heightLabel(p.heightCm, units)),
-              onTap: () => _editHeight(context, ref, p.heightCm, units),
-            ),
-            const Divider(height: 32),
             const _SectionHeader('Backup'),
             const _BackupSection(),
             const SizedBox(height: 24),
@@ -94,63 +83,6 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  static String _heightLabel(double? cm, UnitSystem units) =>
-      cm == null ? 'Not set' : formatHeight(cm, units);
-
-  static Future<void> _editHeight(
-    BuildContext context,
-    WidgetRef ref,
-    double? current,
-    UnitSystem units,
-  ) async {
-    final entered = await showDialog<double>(
-      context: context,
-      builder: (_) => _HeightDialog(units: units, initialCm: current),
-    );
-    if (entered == null) return;
-    await ref.read(databaseProvider).updateProfile(
-          UserProfilesCompanion(heightCm: Value(entered)),
-        );
-  }
-}
-
-/// Feet and inches for imperial, centimetres for metric — see [HeightField].
-class _HeightDialog extends StatefulWidget {
-  const _HeightDialog({required this.units, this.initialCm});
-
-  final UnitSystem units;
-  final double? initialCm;
-
-  @override
-  State<_HeightDialog> createState() => _HeightDialogState();
-}
-
-class _HeightDialogState extends State<_HeightDialog> {
-  late double? _cm = widget.initialCm;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Height'),
-      content: HeightField(
-        units: widget.units,
-        initialCm: widget.initialCm,
-        autofocus: true,
-        onChanged: (value) => setState(() => _cm = value),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed:
-              _cm == null ? null : () => Navigator.of(context).pop(_cm),
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
 }
 
 /// Rest length, adjusted in 15-second steps.

@@ -10,6 +10,7 @@ import 'package:triple_r/services/clock.dart';
 import 'package:triple_r/services/screen_wake.dart';
 import 'package:triple_r/state/active_session.dart';
 import 'package:triple_r/state/timer_providers.dart';
+import 'package:triple_r/widgets/edit_set_dialog.dart';
 import 'package:triple_r/theme.dart';
 
 void main() {
@@ -52,6 +53,26 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+  }
+
+  /// The nth TextField inside the edit dialog. Scoped because the screen
+  /// behind the dialog has fields of its own.
+  Finder dialogField(int index) => find
+      .descendant(
+        of: find.byType(EditSetDialog),
+        matching: find.byType(TextField),
+      )
+      .at(index);
+
+  /// Skips the six pair exercises so the triplet is next, without tapping
+  /// through eighteen sets.
+  Future<void> skipToTriplet(WidgetTester tester) async {
+    final notifier = container.read(activeSessionProvider.notifier);
+    while (container.read(activeSessionProvider).value?.currentStep?.isTriplet ==
+        false) {
+      await notifier.skipCurrentExercise();
+    }
     await tester.pumpAndSettle();
   }
 
@@ -107,21 +128,21 @@ void main() {
     ticker.tick();
     await tester.pumpAndSettle();
 
-    expect(find.text('Rest complete'), findsOneWidget);
+    expect(find.text('Rest done'), findsOneWidget);
     expect(alerts.restCompletions, hasLength(1));
 
     await disposeApp(tester);
   });
 
-  testWidgets('+30s extends a running rest', (tester) async {
+  testWidgets('+15s extends a running rest', (tester) async {
     await pumpWorkout(tester);
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('+30s'));
+    await tester.tap(find.text('+15s'));
     await tester.pumpAndSettle();
 
-    expect(find.text('2:00'), findsOneWidget);
+    expect(find.text('1:45'), findsOneWidget);
 
     await disposeApp(tester);
   });
@@ -132,7 +153,7 @@ void main() {
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     expect(find.text('Resting'), findsNothing);
@@ -170,14 +191,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     // The pair alternates, so the partner exercise comes between set 1 and
     // set 2 of this one.
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     expect(
@@ -209,13 +230,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     // Past the partner exercise and back to set 2 of this one.
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     expect(
@@ -258,19 +279,29 @@ void main() {
     await pumpWorkout(tester);
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     // Back to the pull-up on set 2; set 1 shows in the history list.
     await tester.tap(find.text('Log set'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip rest'));
+    await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
 
     // Set 1 now carries its value; the sets still to come hold their place
     // with a placeholder rather than being absent.
+    //
+    // Anchored to the Set 1 row rather than to any ListTile: the "Just
+    // logged" card is a ListTile too, and it is legitimately showing the same
+    // number for the paired exercise.
     expect(
-      find.descendant(of: find.byType(ListTile), matching: find.text('5')),
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Set 1'),
+          matching: find.byType(ListTile),
+        ),
+        matching: find.text('5'),
+      ),
       findsOneWidget,
     );
     expect(find.text('—'), findsNWidgets(2));
@@ -325,6 +356,119 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(await db.inProgressSession, isNotNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('tapping the entry field selects the whole number',
+      (tester) async {
+    // The seed is a guess to be overtyped, not text to edit. Leaving the
+    // caret where the user tapped costs a select-all before every correction.
+    await pumpWorkout(tester);
+
+    await tester.tap(find.byType(TextField).first);
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField).first);
+    expect(field.controller!.selection.baseOffset, 0);
+    expect(
+      field.controller!.selection.extentOffset,
+      field.controller!.text.length,
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the set just logged stays reachable during the rest',
+      (tester) async {
+    // Logging advances the cursor at once, so the rest is spent looking at
+    // the *next* exercise. The set just finished used to be unreachable until
+    // its exercise came round again two steps later.
+    await pumpWorkout(tester);
+    await tester.enterText(find.byType(TextField).first, '7');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log set'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Just logged'), findsOneWidget);
+    expect(find.textContaining('Scapular Pulls set 1'), findsOneWidget);
+
+    await tester.tap(find.textContaining('Just logged'));
+    await tester.pumpAndSettle();
+    await tester.enterText(dialogField(0), '9');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    final sets = await db.setsForSession(
+      container.read(activeSessionProvider).value!.id,
+    );
+    expect(
+      sets.firstWhere((s) => s.pathId == 'pullup').repsCompleted,
+      9,
+      reason: 'corrected without waiting for the exercise to come round',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a logged set can have its weight corrected', (tester) async {
+    // Weight is per set in the schema, but there was no way to change it once
+    // logged — so a set recorded at the wrong load stayed wrong and fed the
+    // load-progression evaluation that way.
+    await db.saveProgressionConfig(
+      pathId: 'pullup',
+      branchId: 'weighted',
+      exerciseId: 'weighted_pullups',
+    );
+    await pumpWorkout(tester);
+
+    await tester.enterText(find.byType(TextField).at(1), '10');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log set'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Just logged'));
+    await tester.pumpAndSettle();
+    await tester.enterText(dialogField(1), '25');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    final sets = await db.setsForSession(
+      container.read(activeSessionProvider).value!.id,
+    );
+    expect(
+      sets.firstWhere((s) => s.pathId == 'pullup').weightKg,
+      closeTo(poundsToKg(25), 1e-9),
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a timed exercise offers a stopwatch that fills the field',
+      (tester) async {
+    // A plank is held until failure — the number is not known in advance, and
+    // watching a clock while shaking is not a plan.
+    await db.saveProgressionConfig(
+      pathId: 'antiextension',
+      branchId: 'rings',
+      exerciseId: 'planks',
+    );
+    await pumpWorkout(tester);
+    await skipToTriplet(tester);
+
+    expect(find.text('Start hold'), findsOneWidget);
+    await tester.tap(find.text('Start hold'));
+    await tester.pumpAndSettle();
+
+    clock.advance(const Duration(seconds: 42));
+    ticker.tick();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Stop'));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField).first);
+    expect(field.controller!.text, '42');
 
     await disposeApp(tester);
   });

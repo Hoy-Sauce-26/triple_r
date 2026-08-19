@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -54,6 +54,15 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 3) {
             await m.addColumn(exerciseStates, exerciseStates.masteredAt);
+          }
+          if (from < 4) {
+            await m.addColumn(workoutSessions, workoutSessions.sessionOrdinal);
+          }
+          if (from < 5) {
+            // Height was dropped. SQLite cannot drop a column in place at the
+            // versions this supports, so the table is rebuilt from the
+            // current schema and the surviving columns copied across.
+            await m.alterTable(TableMigration(userProfiles));
           }
         },
         beforeOpen: (details) async {
@@ -177,6 +186,7 @@ class AppDatabase extends _$AppDatabase {
     required String id,
     required DateTime startedAt,
     required int rotationIndex,
+    required int sessionOrdinal,
     required int pairRestSeconds,
     required int tripletRestSeconds,
     required String cursorJson,
@@ -187,6 +197,7 @@ class AppDatabase extends _$AppDatabase {
         startedAt: startedAt,
         status: 'in_progress',
         rotationIndex: rotationIndex,
+        sessionOrdinal: Value(sessionOrdinal),
         pairRestSeconds: pairRestSeconds,
         tripletRestSeconds: tripletRestSeconds,
         cursorJson: Value(cursorJson),
@@ -244,6 +255,46 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// Drives the pre-filled targets: what the user managed last time is the
   /// best guess at what they will manage now.
+  /// The session number the next workout will be.
+  ///
+  /// Carried forward from the last completed session rather than counted from
+  /// the rows, so starting a workout out of order advances the sequence
+  /// instead of leaving it stuck: finishing the workout you were actually due
+  /// must hand you the *next* one, not the same one again.
+  ///
+  /// Falls back to the row count for databases whose sessions predate the
+  /// column.
+  /// Corrects one already-logged set, in any session.
+  ///
+  /// Distinct from [logSet], which upserts a whole row against a deterministic
+  /// id and belongs to the workout in progress. History has no active session
+  /// to route through, and the row already knows its exercise, so this edits
+  /// the values in place.
+  Future<void> updateSetValues(
+    String id, {
+    required int? reps,
+    required int? holdSeconds,
+    required double weightKg,
+  }) async {
+    await (update(setRecords)..where((s) => s.id.equals(id))).write(
+      SetRecordsCompanion(
+        repsCompleted: Value(reps),
+        holdSeconds: Value(holdSeconds),
+        weightKg: Value(weightKg),
+      ),
+    );
+  }
+
+  Future<int> nextSessionOrdinal() async {
+    final last = await (select(workoutSessions)
+          ..where((s) => s.status.equals('completed'))
+          ..orderBy([(s) => OrderingTerm.desc(s.startedAt)])
+          ..limit(1))
+        .getSingleOrNull();
+    final ordinal = last?.sessionOrdinal;
+    return ordinal == null ? await completedSessionCount() : ordinal + 1;
+  }
+
   Future<List<SetRecord>> lastSessionSets(
     String exerciseId, {
     String? excludingSessionId,
