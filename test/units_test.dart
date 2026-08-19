@@ -118,27 +118,4 @@ void main() {
 }
 
 void _heightTests() {
-  group('height', () {
-    test('splits centimetres into feet and inches', () {
-      expect(cmToFeetInches(180.34), (feet: 5, inches: 11));
-      expect(cmToFeetInches(152.4), (feet: 5, inches: 0));
-    });
-
-    test('rounds total inches, not the remainder', () {
-      // 182.8cm is 71.97in. Rounding the remainder gives 11.97 -> 12 and
-      // renders 5'12"; rounding the total gives 72 -> 6'0".
-      expect(cmToFeetInches(182.8), (feet: 6, inches: 0));
-      expect(formatHeight(182.8, UnitSystem.imperial), "6'0\"");
-    });
-
-    test('round-trips a feet-and-inches entry', () {
-      final cm = feetInchesToCm(5, 11);
-      expect(cm, closeTo(180.34, 1e-9));
-      expect(cmToFeetInches(cm), (feet: 5, inches: 11));
-    });
-
-    test('formats metric in whole centimetres', () {
-      expect(formatHeight(180.34, UnitSystem.metric), '180 cm');
-    });
-  });
 }

@@ -4,10 +4,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
+import '../domain/countdown.dart';
 import '../domain/progression.dart';
 import '../domain/session_plan.dart';
 import '../domain/workout_steps.dart';
 import '../providers.dart';
+import '../trees/exercises.dart';
 import '../trees/paths.dart';
 import '../trees/tree_rules.dart';
 import 'timer_providers.dart';
@@ -78,8 +80,18 @@ class ActiveSession {
 /// Every mutation writes through to the database before updating state, so a
 /// session killed at any point resumes to exactly what the user saw.
 class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
+  /// What the notification currently says, so identical updates are dropped.
+  String? _lastNotification;
+
   @override
   Future<ActiveSession?> build() async {
+    // The rest countdown is not part of this notifier's state, but it is part
+    // of what the notification says, so its ticks have to reach here.
+    ref.listen(restTimerProvider, (_, _) {
+      final session = state.value;
+      if (session != null) _publishNotification(session);
+    });
+
     final db = ref.read(databaseProvider);
     final row = await db.inProgressSession;
     if (row == null) return null;
@@ -97,17 +109,16 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     final positions = await _positions();
     final profile = await _db.profile;
 
-    // Reconstructed rather than stored. The ordinal is pinned down by the
-    // saved rotation and the completed count together: it is the only session
-    // at or after the count that runs this order, and the count cannot have
-    // moved while this session is still open. Passing `row.rotationIndex`
-    // here — a 0-2 index standing in for a session number — used to swap the
-    // alternating hinge lift out from under a resumed workout.
-    final ordinal = sessionOrdinalForRotation(
-      await _db.completedSessionCount(),
-      row.rotationIndex,
-      rotatePairOrder: profile.rotatePairOrder,
-    );
+    // Read back rather than recomputed, so a resumed workout is the same
+    // session it started as. Rows predating the column reconstruct it from the
+    // saved rotation: it is the only session at or after the count that runs
+    // that order, and the count cannot move while this session is open.
+    final ordinal = row.sessionOrdinal ??
+        sessionOrdinalForRotation(
+          await _db.completedSessionCount(),
+          row.rotationIndex,
+          rotatePairOrder: profile.rotatePairOrder,
+        );
     final plan = SessionPlan(
       rotationIndex: row.rotationIndex,
       pairs: pairRotations[row.rotationIndex],
@@ -162,13 +173,13 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
   /// Opens a new session and starts the clock.
   Future<void> start() async {
     final profile = await _db.profile;
-    final completed = await _db.completedSessionCount();
     final positions = await _positions();
 
     // The session this workout *is*, which the picked workout may put ahead
     // of the completed count — someone who trained yesterday without logging
     // it is on the next session, not the one the count still thinks.
-    final ordinal = ref.read(plannedSessionOrdinalProvider) ?? completed;
+    final ordinal = ref.read(plannedSessionOrdinalProvider) ??
+        await _db.nextSessionOrdinal();
     final rotationIndex = rotationIndexFor(
       ordinal,
       rotatePairOrder: profile.rotatePairOrder,
@@ -192,6 +203,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
       id: id,
       startedAt: now,
       rotationIndex: rotationIndex,
+      sessionOrdinal: ordinal,
       pairRestSeconds: profile.defaultPairRestSeconds,
       tripletRestSeconds: profile.defaultTripletRestSeconds,
       cursorJson: cursor.encode(),
@@ -209,6 +221,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     ));
 
     ref.read(sessionClockProvider.notifier).start(startedAt: now);
+    _publishNotification(state.value!);
   }
 
   /// Picks a stored in-progress session back up.
@@ -216,11 +229,73 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     final session = state.value;
     if (session == null) return;
     ref.read(sessionClockProvider.notifier).start(startedAt: session.startedAt);
+    _publishNotification(session);
   }
 
   Future<void> _persist(ActiveSession session) async {
     await _db.saveCursor(session.id, session.cursor.encode());
     state = AsyncData(session);
+    _publishNotification(session);
+  }
+
+  /// Mirrors the workout into the ongoing notification.
+  ///
+  /// Driven from here rather than from the workout screen so it stays right
+  /// whichever screen is on top — and, more to the point, when none is,
+  /// because the phone is in a pocket between sets.
+  ///
+  /// While a rest runs the notification is *about the rest*: the countdown in
+  /// the title, the bar tracking it, and the exercise named as what is coming
+  /// rather than what is happening. That is the state the shade actually gets
+  /// looked at in.
+  void _publishNotification(ActiveSession session) {
+    final notification = ref.read(workoutNotificationProvider);
+    final step = session.currentStep;
+    if (step == null) {
+      _lastNotification = null;
+      notification.clear().ignore();
+      return;
+    }
+
+    final exercise = exerciseById(session.exerciseFor(step)).name;
+    final detail =
+        '${step.blockLabel} · set ${step.setIndex} of $setsPerExercise';
+    final rest = ref.read(restTimerProvider);
+
+    final String title;
+    final String body;
+    final int progress;
+    final int maxProgress;
+
+    if (rest.isRunning || rest.isPaused) {
+      final remaining = ref.read(restTimerProvider.notifier).remaining;
+      title = 'Resting · ${formatDuration(remaining)}';
+      body = 'Next up: $exercise · $detail';
+      maxProgress = rest.total.inSeconds;
+      progress = maxProgress - remaining.inSeconds;
+    } else {
+      final total = session.stepsTotal;
+      title = exercise;
+      body = detail;
+      progress = total - session.stepsRemaining;
+      maxProgress = total;
+    }
+
+    // The rest ticks five times a second; the notification only says whole
+    // seconds. Comparing the rendered content collapses those ticks into one
+    // post per second, instead of five posts saying the same thing.
+    final rendered = '$title|$body|$progress|$maxProgress';
+    if (rendered == _lastNotification) return;
+    _lastNotification = rendered;
+
+    notification
+        .show(
+          title: title,
+          body: body,
+          progress: progress,
+          maxProgress: maxProgress,
+        )
+        .ignore();
   }
 
   Future<void> completeWarmup() async {
@@ -348,7 +423,10 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
 
     ref.read(restTimerProvider.notifier).skip();
     ref.read(sessionClockProvider.notifier).stop();
+    _lastNotification = null;
+    ref.read(workoutNotificationProvider).clear().ignore();
     ref.invalidate(completedSessionCountProvider);
+    ref.invalidate(nextSessionOrdinalProvider);
     state = const AsyncData(null);
   }
 

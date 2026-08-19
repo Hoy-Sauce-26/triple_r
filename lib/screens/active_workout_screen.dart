@@ -11,9 +11,53 @@ import '../state/active_session.dart';
 import '../state/timer_providers.dart';
 import '../trees/exercises.dart';
 import '../trees/tree_types.dart';
-import '../widgets/number_entry_dialog.dart';
+import '../widgets/edit_set_dialog.dart';
 import '../theme.dart';
 import 'session_summary_screen.dart';
+
+/// The two text controllers for the set being logged.
+///
+/// Held in a provider rather than in the field widget's state because the
+/// fields live in the scrolling body while the Log-set button lives in the
+/// fixed bar at the bottom, and both need the same text. Keyed by step and
+/// auto-disposed, so moving to the next set gets fresh, empty controllers
+/// without anyone having to remember to clear them.
+class SetEntryFields {
+  final value = TextEditingController();
+  final weight = TextEditingController();
+
+  /// Whether the user has typed in each field, so a seed arriving late can
+  /// fill an untouched field without overwriting one they are working in.
+  bool valueTouched = false;
+  bool weightTouched = false;
+  int? seededValue;
+  String? seededWeight;
+
+  void dispose() {
+    value.dispose();
+    weight.dispose();
+  }
+}
+
+/// Identifies one set of one exercise — the lifetime of a set of fields.
+String stepKey(WorkoutStep step) => '${step.pathId}-${step.setIndex}';
+
+final setEntryProvider =
+    Provider.autoDispose.family<SetEntryFields, String>((ref, key) {
+  final fields = SetEntryFields();
+  ref.onDispose(fields.dispose);
+  return fields;
+});
+
+/// Selects the whole number when a numeric field is tapped.
+///
+/// Tapping such a field almost always means replacing the value, not editing
+/// it: the seed is a guess, and the user is correcting it. Leaving the caret
+/// where they tapped costs a select-all before they can type.
+void selectAllOnTap(TextEditingController controller) {
+  controller.selection =
+      TextSelection(baseOffset: 0, extentOffset: controller.text.length);
+}
 
 /// The guided workout: one set at a time, with the rest timer between.
 class ActiveWorkoutScreen extends ConsumerWidget {
@@ -55,16 +99,27 @@ class ActiveWorkoutScreen extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        // The rest card sits at the bottom of the stack, which on Android
-        // gesture/3-button navigation is underneath the system bar. Nothing
-        // else in the app was inset either, so this guards the whole body.
-        child: Stack(
+        bottom: false,
+        child: Column(
           children: [
-            _StepView(session: session, step: step),
-            const _RestOverlay(),
+            Expanded(child: _StepView(session: session, step: step)),
+            // Pinned above the action bar rather than sitting at the end of
+            // the list. It is only relevant for as long as it is the last
+            // thing that happened, and having to scroll to reach it defeats
+            // the point of it being a quick correction.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _PreviousSetCard(session: session, step: step),
+            ),
           ],
         ),
       ),
+      // A fixed bar rather than a card floating over the list. It cannot be
+      // scrolled away from, it never covers the set list, and — the reason it
+      // exists — it gives Log set one permanent home. Skip rest used to sit in
+      // the primary action position, so a thumb reaching for Log set hit it
+      // instead and threw the rest away.
+      bottomNavigationBar: _ActionBar(session: session, step: step),
     );
   }
 
@@ -157,9 +212,10 @@ class _StepView extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         _SetLogger(
-          key: ValueKey('${step.pathId}-${step.setIndex}'),
+          key: ValueKey(stepKey(step)),
           exercise: exercise,
           scheme: scheme,
+          step: step,
         ),
         const SizedBox(height: 24),
         _LoggedSets(
@@ -172,56 +228,25 @@ class _StepView extends ConsumerWidget {
   }
 }
 
-/// The number pad for one set.
+/// The fields for one set. The button that submits them lives in the bar at
+/// the bottom of the screen.
 class _SetLogger extends ConsumerStatefulWidget {
-  const _SetLogger({super.key, required this.exercise, required this.scheme});
+  const _SetLogger({
+    super.key,
+    required this.exercise,
+    required this.scheme,
+    required this.step,
+  });
 
   final Exercise exercise;
   final RepScheme scheme;
+  final WorkoutStep step;
 
   @override
   ConsumerState<_SetLogger> createState() => _SetLoggerState();
 }
 
 class _SetLoggerState extends ConsumerState<_SetLogger> {
-  final _entry = TextEditingController();
-  final _weight = TextEditingController();
-
-  /// The seed currently sitting in the field, so an async value arriving late
-  /// can fill an untouched field without overwriting one the user has typed
-  /// into.
-  int? _seeded;
-  bool _touched = false;
-
-  /// Same idea for the added weight, tracked separately so typing a rep count
-  /// does not freeze the weight field and vice versa.
-  String? _seededWeight;
-  bool _weightTouched = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _entry.addListener(_onEntryChanged);
-    _weight.addListener(_onWeightChanged);
-  }
-
-  void _onEntryChanged() {
-    // Only the *first* edit matters; after that the field is the user's.
-    if (!_touched) _touched = true;
-    setState(() {});
-  }
-
-  void _onWeightChanged() => _weightTouched = true;
-
-  @override
-  void dispose() {
-    _entry.removeListener(_onEntryChanged);
-    _weight.removeListener(_onWeightChanged);
-    _entry.dispose();
-    _weight.dispose();
-    super.dispose();
-  }
-
   /// What to pre-fill this set with, best source first:
   ///
   /// 1. The last set of this exercise *this session* — someone who moved from
@@ -232,10 +257,7 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
   /// Deliberately not the scheme *target*: hitting the ceiling is the goal,
   /// not the norm, so the target is the worse guess almost every time.
   int? _seedValue(List<SetRecord> thisSession, List<SetRecord>? lastSession) {
-    final mine = thisSession
-        .where((s) => s.exerciseId == widget.exercise.id)
-        .toList()
-      ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+    final mine = _mine(thisSession);
     if (mine.isNotEmpty) {
       return mine.last.repsCompleted ?? mine.last.holdSeconds;
     }
@@ -260,10 +282,7 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
     List<SetRecord>? lastSession,
     ExerciseState? state,
   ) {
-    final mine = thisSession
-        .where((s) => s.exerciseId == widget.exercise.id)
-        .toList()
-      ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+    final mine = _mine(thisSession);
     if (mine.isNotEmpty) return mine.last.weightKg;
 
     final working = state?.workingLoadKg ?? 0;
@@ -275,71 +294,94 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
     return null;
   }
 
+  /// Runs [action] once the current frame is over.
+  ///
+  /// Seeding writes to a controller the Log-set button also listens to, and
+  /// that button lives in the bottom bar — a different subtree. Notifying a
+  /// listener outside your own subtree during build is illegal, so the write
+  /// has to wait until the build phase is done. (It was legal before only
+  /// because the field itself was the controller's only listener, and a
+  /// widget may always dirty its own descendants.)
+  void _afterFrame(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) action();
+    });
+  }
+
+  List<SetRecord> _mine(List<SetRecord> sets) =>
+      sets.where((s) => s.exerciseId == widget.exercise.id).toList()
+        ..sort((a, b) => a.setIndex.compareTo(b.setIndex));
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final units = ref.watch(unitSystemProvider);
     final previous = ref.watch(previousSetsProvider(widget.exercise.id)).value;
     final thisSession = ref.watch(currentSessionSetsProvider).value ?? const [];
+    final fields = ref.watch(setEntryProvider(stepKey(widget.step)));
     final timed = widget.scheme.isTimed;
 
     final seed = _seedValue(thisSession, previous);
-    if (!_touched && seed != null && seed != _seeded) {
-      // Guarded by the value so this converges rather than looping: it runs
-      // once when the seed first resolves, and again only if it genuinely
-      // changes while the field is still untouched.
-      _seeded = seed;
-      _entry.value = TextEditingValue(
-        text: '$seed',
-        // Selected, not just placed: the common case is overtyping the whole
-        // number, and a caret at the end would mean clearing it first.
-        selection: TextSelection(baseOffset: 0, extentOffset: '$seed'.length),
-      );
+    if (!fields.valueTouched && seed != null && seed != fields.seededValue) {
+      // Claimed synchronously so the next build does not schedule again; the
+      // write itself waits for the frame to end. See [_afterFrame].
+      fields.seededValue = seed;
+      _afterFrame(() {
+        if (fields.valueTouched) return;
+        fields.value.value = TextEditingValue(
+          text: '$seed',
+          // Selected, not just placed: the common case is overtyping the
+          // whole number, and a caret at the end means clearing it first.
+          selection: TextSelection(baseOffset: 0, extentOffset: '$seed'.length),
+        );
+      });
     }
 
-    if (widget.exercise.loadable && !_weightTouched) {
+    if (widget.exercise.loadable && !fields.weightTouched) {
       final state = ref.watch(exerciseStateProvider(widget.exercise.id)).value;
       final kg = _seedWeightKg(thisSession, previous, state);
       final text =
           kg == null || kg == 0 ? '' : formatWeight(kg, units, withSuffix: false);
-      if (text.isNotEmpty && text != _seededWeight) {
-        _seededWeight = text;
-        _weight.text = text;
-        // Set directly rather than through the listener, which would flip
-        // `_weightTouched` and stop the field ever seeding again.
-        _weightTouched = false;
+      if (text.isNotEmpty && text != fields.seededWeight) {
+        fields.seededWeight = text;
+        _afterFrame(() {
+          if (fields.weightTouched) return;
+          fields.weight.text = text;
+        });
       }
     }
-
-    final entered = int.tryParse(_entry.text.trim());
-    final valid = entered != null && entered >= 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (timed) ...[
+          _SetStopwatch(fields: fields),
+          const SizedBox(height: 12),
+        ],
         TextField(
-          controller: _entry,
+          controller: fields.value,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.done,
           textAlign: TextAlign.center,
           style: theme.textTheme.displaySmall?.tabular,
-          onSubmitted: (_) => valid ? _log(entered, timed, units) : null,
+          onTap: () => selectAllOnTap(fields.value),
+          onChanged: (_) => setState(() => fields.valueTouched = true),
           decoration: InputDecoration(
             labelText: timed ? 'Seconds held' : 'Reps completed',
             // A free field rather than the old +/- pair: a 60-second plank
             // took sixty taps, and typing a number is faster than nudging to
             // it even for reps.
             border: const OutlineInputBorder(),
-            errorText: _entry.text.trim().isEmpty || valid
-                ? null
-                : 'Whole numbers only',
+            errorText: _errorText(fields),
           ),
         ),
         if (widget.exercise.loadable) ...[
           const SizedBox(height: 12),
           TextField(
-            controller: _weight,
+            controller: fields.weight,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onTap: () => selectAllOnTap(fields.weight),
+            onChanged: (_) => fields.weightTouched = true,
             decoration: InputDecoration(
               labelText: 'Added weight (${units.weightSuffix})',
               border: const OutlineInputBorder(),
@@ -347,30 +389,128 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          onPressed: valid ? () => _log(entered, timed, units) : null,
-          child: const Text('Log set'),
-        ),
       ],
     );
   }
 
-  Future<void> _log(int entered, bool timed, UnitSystem units) async {
-    final weight = double.tryParse(_weight.text) ?? 0;
-    // Confirmed by touch: the user is often looking at the bar, not the
-    // phone, and needs to know the tap registered without checking.
-    //
-    // `ignore()` rather than `await`. Feedback must never sit between the tap
-    // and the work it confirms — awaiting a platform channel here means a
-    // device that answers slowly (or, in a test, never) silently swallows the
-    // set instead of logging it.
-    ref.read(hapticsProvider).confirm().ignore();
-    await ref.read(activeSessionProvider.notifier).logSet(
-          reps: timed ? null : entered,
-          holdSeconds: timed ? entered : null,
-          weightKg: fromDisplayWeight(weight, units),
-        );
+  String? _errorText(SetEntryFields fields) {
+    final text = fields.value.text.trim();
+    if (text.isEmpty) return null;
+    final parsed = int.tryParse(text);
+    return parsed != null && parsed >= 0 ? null : 'Whole numbers only';
+  }
+}
+
+/// Times the set as it happens, for holds.
+///
+/// A plank is not a number the user knows in advance — they hold it until
+/// they fail and then need that duration recorded. Typing it means watching a
+/// clock while shaking, so the app holds the clock instead and writes the
+/// result into the field on stop.
+class _SetStopwatch extends ConsumerWidget {
+  const _SetStopwatch({required this.fields});
+
+  final SetEntryFields fields;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    ref.watch(setStopwatchProvider);
+    final stopwatch = ref.read(setStopwatchProvider.notifier);
+    final running = stopwatch.isRunning;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            formatDuration(stopwatch.elapsed),
+            style: theme.textTheme.headlineMedium?.tabular.copyWith(
+              color: running
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        if (running)
+          FilledButton.tonalIcon(
+            onPressed: () {
+              final held = stopwatch.stop();
+              final seconds = '${held.inSeconds}';
+              fields.valueTouched = true;
+              fields.value.value = TextEditingValue(
+                text: seconds,
+                selection:
+                    TextSelection(baseOffset: 0, extentOffset: seconds.length),
+              );
+            },
+            icon: const Icon(Icons.stop),
+            label: const Text('Stop'),
+          )
+        else
+          OutlinedButton.icon(
+            onPressed: stopwatch.start,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Start hold'),
+          ),
+      ],
+    );
+  }
+}
+
+/// The set just logged, on whichever exercise it belonged to.
+///
+/// Logging advances the cursor immediately, so during the rest the screen is
+/// already showing the *next* exercise and the set just finished is nowhere
+/// on it. Correcting a mistyped rep count meant waiting until that exercise
+/// came round again two steps later. This keeps it one tap away for exactly
+/// as long as it is the most recent thing that happened.
+class _PreviousSetCard extends ConsumerWidget {
+  const _PreviousSetCard({required this.session, required this.step});
+
+  final ActiveSession session;
+  final WorkoutStep step;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final units = ref.watch(unitSystemProvider);
+    final all = ref.watch(currentSessionSetsProvider).value ?? const [];
+
+    // The most recent set that is not part of the step now on screen — which
+    // during a pair is the other exercise, and on set 2 of a triplet is the
+    // one before it in the circuit.
+    final others = all
+        .where((s) => !(s.pathId == step.pathId && s.setIndex == step.setIndex))
+        .toList()
+      ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+    if (others.isEmpty) return const SizedBox.shrink();
+
+    final record = others.last;
+    final exercise = exerciseById(record.exerciseId);
+    final value = record.holdSeconds != null
+        ? '${record.holdSeconds}s'
+        : '${record.repsCompleted}';
+    final weight = exercise.loadable && record.weightKg > 0
+        ? ' · ${formatWeight(record.weightKg, units)}'
+        : '';
+
+    return Card.outlined(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.history, size: 20),
+        title: Text(
+          'Just logged · ${exercise.name} set ${record.setIndex}',
+          style: theme.textTheme.bodySmall,
+        ),
+        subtitle: Text(
+          '$value$weight',
+          style: theme.textTheme.titleMedium,
+        ),
+        trailing: const Icon(Icons.edit_outlined, size: 18),
+        onTap: () => editLoggedSet(context, ref, record, exercise),
+      ),
+    );
   }
 }
 
@@ -422,28 +562,40 @@ class _LoggedSets extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     SetRecord record,
-  ) async {
-    final timed = record.holdSeconds != null;
+  ) =>
+      editLoggedSet(context, ref, record, exercise);
+}
 
-    final text = await showDialog<String>(
-      context: context,
-      builder: (_) => NumberEntryDialog(
-        title: 'Set ${record.setIndex}',
-        initialText: '${record.holdSeconds ?? record.repsCompleted ?? 0}',
-        labelText: timed ? 'Seconds' : 'Reps',
-      ),
-    );
+/// Opens the correction dialog for [record] and writes the result back.
+///
+/// Shared by the current exercise's set list and the previous-exercise card,
+/// so a set is corrected the same way wherever it is reached from.
+Future<void> editLoggedSet(
+  BuildContext context,
+  WidgetRef ref,
+  SetRecord record,
+  Exercise exercise,
+) async {
+  final timed = record.holdSeconds != null;
+  final result = await showDialog<EditSetResult>(
+    context: context,
+    builder: (_) => EditSetDialog(
+      title: '${exercise.name} · set ${record.setIndex}',
+      initialValue: record.holdSeconds ?? record.repsCompleted ?? 0,
+      timed: timed,
+      units: ref.read(unitSystemProvider),
+      initialWeightKg: exercise.loadable ? record.weightKg : null,
+    ),
+  );
+  if (result == null) return;
 
-    final corrected = text == null ? null : int.tryParse(text);
-    if (corrected == null) return;
-    await ref.read(activeSessionProvider.notifier).editSet(
-          pathId: pathId,
-          setIndex: record.setIndex,
-          reps: timed ? null : corrected,
-          holdSeconds: timed ? corrected : null,
-          weightKg: record.weightKg,
-        );
-  }
+  await ref.read(activeSessionProvider.notifier).editSet(
+        pathId: record.pathId,
+        setIndex: record.setIndex,
+        reps: timed ? null : result.value,
+        holdSeconds: timed ? result.value : null,
+        weightKg: result.weightKg,
+      );
 }
 
 /// One row: a logged value, or a placeholder holding its place.
@@ -493,61 +645,150 @@ class _SetRow extends StatelessWidget {
   }
 }
 
-/// The rest countdown, over the top of the next exercise so the user can see
-/// what is coming while they wait.
-class _RestOverlay extends ConsumerWidget {
-  const _RestOverlay();
+/// The fixed bottom bar: rest state on the left, Log set on the right.
+class _ActionBar extends ConsumerWidget {
+  const _ActionBar({required this.session, required this.step});
+
+  final ActiveSession session;
+  final WorkoutStep step;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final countdown = ref.watch(restTimerProvider);
-    if (countdown.isIdle) return const SizedBox.shrink();
-
     final theme = Theme.of(context);
+    final countdown = ref.watch(restTimerProvider);
     final controller = ref.read(restTimerProvider.notifier);
-    final remaining = controller.remaining;
+    final resting = !countdown.isIdle;
+    final fields = ref.watch(setEntryProvider(stepKey(step)));
 
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Card(
-        margin: const EdgeInsets.all(16),
-        color: countdown.isFinished
-            ? theme.colorScheme.primaryContainer
-            : theme.colorScheme.surfaceContainerHigh,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      countdown.isFinished ? 'Rest complete' : 'Resting',
-                      style: theme.textTheme.labelMedium,
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Row(
+                children: [
+                  if (resting) ...[
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          countdown.isFinished ? 'Rest done' : 'Resting',
+                          style: theme.textTheme.labelSmall,
+                        ),
+                        Text(
+                          formatDuration(controller.remaining),
+                          style: theme.textTheme.titleLarge?.tabular,
+                        ),
+                      ],
                     ),
-                    Text(
-                      formatDuration(remaining),
-                      style: theme.textTheme.headlineMedium?.tabular,
+                    const SizedBox(width: 4),
+                    // Red and unfilled. Throwing the rest away is destructive
+                    // in a small way, and it should not read as the thing to
+                    // do next — which is exactly how it read as a filled
+                    // button in the primary position.
+                    TextButton(
+                      onPressed: controller.skip,
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: Text(countdown.isFinished ? 'Dismiss' : 'Skip'),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          controller.extend(const Duration(seconds: 15)),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('+15s'),
                     ),
                   ],
-                ),
+                  const Spacer(),
+                  _LogSetButton(fields: fields, session: session, step: step),
+                ],
               ),
-              TextButton(
-                onPressed: () => controller.extend(const Duration(seconds: 30)),
-                child: const Text('+30s'),
-              ),
-              const SizedBox(width: 4),
-              FilledButton(
-                onPressed: controller.skip,
-                child: Text(countdown.isFinished ? 'Next' : 'Skip rest'),
-              ),
-            ],
-          ),
+            ),
+            // The rest running out along the bottom edge, mirroring the
+            // session progress bar at the top of the list.
+            SizedBox(
+              height: 3,
+              child: resting
+                  ? LinearProgressIndicator(
+                      value: countdown.progress(ref.read(clockProvider).now()),
+                      backgroundColor: Colors.transparent,
+                    )
+                  : null,
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+/// Logs the set from whatever is currently in the fields.
+class _LogSetButton extends ConsumerWidget {
+  const _LogSetButton({
+    required this.fields,
+    required this.session,
+    required this.step,
+  });
+
+  final SetEntryFields fields;
+  final ActiveSession session;
+  final WorkoutStep step;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final units = ref.watch(unitSystemProvider);
+    final exercise = exerciseById(session.exerciseFor(step));
+    final timed = schemeFor(exercise, step.slot).isTimed;
+
+    // Rebuilt from the controller rather than from widget state: the field
+    // that owns the text lives in the scrolling body, and the button has to
+    // enable and disable along with it.
+    return ListenableBuilder(
+      listenable: fields.value,
+      builder: (context, _) {
+        final entered = int.tryParse(fields.value.text.trim());
+        final valid = entered != null && entered >= 0;
+        return FilledButton(
+          onPressed: valid ? () => _log(ref, entered, timed, units) : null,
+          child: const Text('Log set'),
+        );
+      },
+    );
+  }
+
+  Future<void> _log(
+    WidgetRef ref,
+    int entered,
+    bool timed,
+    UnitSystem units,
+  ) async {
+    final weight = double.tryParse(fields.weight.text) ?? 0;
+    // Confirmed by touch: the user is often looking at the bar, not the
+    // phone, and needs to know the tap registered without checking.
+    //
+    // `ignore()` rather than `await`. Feedback must never sit between the tap
+    // and the work it confirms — awaiting a platform channel here means a
+    // device that answers slowly (or, in a test, never) silently swallows the
+    // set instead of logging it.
+    ref.read(hapticsProvider).confirm().ignore();
+    // A running stopwatch belongs to the set being logged, not the next one.
+    if (ref.read(setStopwatchProvider) != null) {
+      ref.read(setStopwatchProvider.notifier).stop();
+    }
+    await ref.read(activeSessionProvider.notifier).logSet(
+          reps: timed ? null : entered,
+          holdSeconds: timed ? entered : null,
+          weightKg: fromDisplayWeight(weight, units),
+        );
   }
 }
 

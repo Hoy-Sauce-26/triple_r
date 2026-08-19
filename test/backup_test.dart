@@ -24,7 +24,6 @@ void main() {
     await db.updateProfile(
       const UserProfilesCompanion(
         unitSystem: Value('metric'),
-        heightCm: Value(178.5),
         defaultPairRestSeconds: Value(120),
         rotatePairOrder: Value(false),
       ),
@@ -117,7 +116,6 @@ void main() {
 
       final profile = await fresh.profile;
       expect(profile.unitSystem, 'metric');
-      expect(profile.heightCm, closeTo(178.5, 1e-9));
       expect(profile.defaultPairRestSeconds, 120);
       expect(profile.rotatePairOrder, isFalse);
 

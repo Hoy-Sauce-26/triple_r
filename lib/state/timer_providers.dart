@@ -5,6 +5,7 @@ import '../services/alerts.dart';
 import '../services/clock.dart';
 import '../services/haptics.dart';
 import '../services/screen_wake.dart';
+import '../services/workout_notification.dart';
 
 /// All overridden in tests with fakes; the platform implementations here are
 /// what `main()` gets by default.
@@ -12,6 +13,12 @@ final clockProvider = Provider<Clock>((ref) => const SystemClock());
 final tickerProvider = Provider<Ticker>((ref) => const SystemTicker());
 final screenWakeProvider = Provider<ScreenWake>((ref) => const PlatformScreenWake());
 final hapticsProvider = Provider<Haptics>((ref) => const PlatformHaptics());
+
+/// Overridden in `main()` with the initialised plugin. The default does
+/// nothing, so a test that never looks at notifications needs no override and
+/// no plugin.
+final workoutNotificationProvider =
+    Provider<WorkoutNotification>((ref) => const NoopWorkoutNotification());
 
 final alertsProvider = Provider<Alerts>((ref) {
   final alerts = PlatformAlerts();
@@ -181,6 +188,59 @@ class HoldTimerController extends Notifier<Countdown> {
 
 final holdTimerProvider =
     NotifierProvider<HoldTimerController, Countdown>(HoldTimerController.new);
+
+/// A count-up timer for the set being worked.
+///
+/// Separate from [HoldTimerController], which counts *down* to a fixed warmup
+/// target. A working set is open-ended: the user holds a plank until they
+/// fail, and the number they want logged is however long that turned out to
+/// be. Counting down would mean knowing the answer first.
+///
+/// Reuses [SessionClock] because the shape is identical — an instant plus
+/// derived elapsed time — including the reason a fresh instance is published
+/// on every tick.
+class SetStopwatchController extends Notifier<SessionClock?> {
+  TickerHandle? _handle;
+
+  @override
+  SessionClock? build() {
+    ref.onDispose(_stopTicking);
+    return null;
+  }
+
+  Clock get _clock => ref.read(clockProvider);
+
+  bool get isRunning => state != null;
+
+  Duration get elapsed => state?.elapsed(_clock.now()) ?? Duration.zero;
+
+  void start() {
+    state = SessionClock(_clock.now());
+    _handle?.cancel();
+    _handle = ref.read(tickerProvider).start(
+          tickInterval,
+          () => state = state == null ? null : SessionClock(state!.startedAt),
+        );
+  }
+
+  /// Stops and reports the total, for the caller to write into the field.
+  Duration stop() {
+    final total = elapsed;
+    state = null;
+    _stopTicking();
+    return total;
+  }
+
+  void _stopTicking() {
+    _handle?.cancel();
+    _handle = null;
+  }
+}
+
+final setStopwatchProvider =
+    NotifierProvider<SetStopwatchController, SessionClock?>(
+  SetStopwatchController.new,
+);
 
 /// Elapsed workout time. Null when no session is running.
 ///

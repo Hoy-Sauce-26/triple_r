@@ -63,6 +63,15 @@ final reachedExercisesProvider = Provider<Set<String>>((ref) {
   return positions == null ? const {} : reachedExercises(positions);
 });
 
+/// The session number the next workout will be, before any hand-picking.
+///
+/// Carried forward from the last completed session rather than counted, so a
+/// workout started out of order advances the sequence.
+final nextSessionOrdinalProvider = FutureProvider<int>((ref) {
+  ref.watch(sessionHistoryProvider);
+  return ref.watch(databaseProvider).nextSessionOrdinal();
+});
+
 /// A workout the user picked by hand, overriding the rotation, or null for
 /// whichever one is next.
 ///
@@ -90,14 +99,14 @@ final selectedRotationProvider =
 /// than the raw count, so the pair order and the alternating hinge cannot
 /// disagree about which session this is.
 final plannedSessionOrdinalProvider = Provider<int?>((ref) {
-  final completed = ref.watch(completedSessionCountProvider).value;
+  final due = ref.watch(nextSessionOrdinalProvider).value;
   final profile = ref.watch(profileProvider).value;
-  if (completed == null || profile == null) return null;
+  if (due == null || profile == null) return null;
 
   final chosen = ref.watch(selectedRotationProvider);
-  if (chosen == null) return completed;
+  if (chosen == null) return due;
   return sessionOrdinalForRotation(
-    completed,
+    due,
     chosen,
     rotatePairOrder: profile.rotatePairOrder,
   );

@@ -44,6 +44,9 @@ dependencies:
   share_plus: ^13.3.0
   file_picker: ^12.0.0
   path_provider: ^2.1.6
+  # The ongoing workout notification. Android core-library desugaring is
+  # already enabled for it in android/app/build.gradle.kts.
+  flutter_local_notifications: ^19.4.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

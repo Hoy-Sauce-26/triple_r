@@ -1,19 +1,12 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/database.dart';
 import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
-import 'height_field.dart';
 
-/// Logs a body weight, and height the first time round.
-///
-/// Height is asked for here rather than in Settings because it is only ever
-/// entered once, and the moment someone is already typing their weight is the
-/// one moment they will tolerate a second field.
+/// Logs a body weight.
 class LogWeightDialog extends ConsumerStatefulWidget {
   const LogWeightDialog({super.key});
 
@@ -28,7 +21,6 @@ class LogWeightDialog extends ConsumerStatefulWidget {
 
 class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
   final _weight = TextEditingController();
-  double? _heightCm;
   String? _error;
 
   @override
@@ -40,8 +32,6 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
   @override
   Widget build(BuildContext context) {
     final units = ref.watch(unitSystemProvider);
-    final profile = ref.watch(profileProvider).value;
-    final needsHeight = profile?.heightCm == null;
 
     return AlertDialog(
       title: const Text('Log weight'),
@@ -61,16 +51,8 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
               border: const OutlineInputBorder(),
               errorText: _error,
             ),
-            onSubmitted: (_) => _save(units, needsHeight),
+            onSubmitted: (_) => _save(units),
           ),
-          if (needsHeight) ...[
-            const SizedBox(height: 12),
-            HeightField(
-              units: units,
-              helperText: 'Optional. Asked once — it does not change.',
-              onChanged: (cm) => _heightCm = cm,
-            ),
-          ],
         ],
       ),
       actions: [
@@ -79,14 +61,14 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => _save(units, needsHeight),
+          onPressed: () => _save(units),
           child: const Text('Save'),
         ),
       ],
     );
   }
 
-  Future<void> _save(UnitSystem units, bool needsHeight) async {
+  Future<void> _save(UnitSystem units) async {
     final entered = double.tryParse(_weight.text.trim());
     if (entered == null || entered <= 0) {
       setState(() => _error = 'Enter a weight');
@@ -103,11 +85,6 @@ class _LogWeightDialogState extends ConsumerState<LogWeightDialog> {
       weightKg: fromDisplayWeight(entered, units),
       recordedAt: now,
     );
-
-    if (needsHeight && _heightCm != null) {
-      // Already centimetres — HeightField owns the feet-and-inches split.
-      await db.updateProfile(UserProfilesCompanion(heightCm: Value(_heightCm)));
-    }
 
     if (mounted) Navigator.of(context).pop();
   }

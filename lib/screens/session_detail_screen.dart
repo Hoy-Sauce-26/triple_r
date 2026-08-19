@@ -8,6 +8,8 @@ import '../domain/units.dart';
 import '../providers.dart';
 import '../trees/exercises.dart';
 import '../trees/paths.dart';
+import '../trees/tree_types.dart';
+import '../widgets/edit_set_dialog.dart';
 
 /// Everything logged in one past session, grouped by exercise.
 class SessionDetailScreen extends ConsumerWidget {
@@ -26,7 +28,11 @@ class SessionDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Workout')),
-      body: sets == null || session == null
+      // Inset at the bottom: the list ran under the Android navigation bar,
+      // so the last card was permanently half-covered.
+      body: SafeArea(
+        top: false,
+        child: sets == null || session == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -51,6 +57,7 @@ class SessionDetailScreen extends ConsumerWidget {
                   ),
               ],
             ),
+      ),
     );
   }
 }
@@ -129,14 +136,14 @@ List<_ExerciseGroup> _groupByExercise(List<SetRecord> sets) {
   ];
 }
 
-class _ExerciseGroupCard extends StatelessWidget {
+class _ExerciseGroupCard extends ConsumerWidget {
   const _ExerciseGroupCard({required this.group, required this.units});
 
   final _ExerciseGroup group;
   final UnitSystem units;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final exercise = exercisesById[group.exerciseId];
     final perSide = exercise?.perSide ?? false;
@@ -162,10 +169,14 @@ class _ExerciseGroupCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 for (final set in group.sets)
-                  Chip(
+                  // Tappable: a set mistyped during a workout used to be
+                  // frozen the moment the session ended, and it still feeds
+                  // the charts and the personal bests.
+                  ActionChip(
                     visualDensity: VisualDensity.compact,
                     label: Text(_label(set, perSide)),
                     side: BorderSide(color: theme.colorScheme.outlineVariant),
+                    onPressed: () => _edit(context, ref, set, exercise),
                   ),
               ],
             ),
@@ -173,6 +184,37 @@ class _ExerciseGroupCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _edit(
+    BuildContext context,
+    WidgetRef ref,
+    SetRecord set,
+    Exercise? exercise,
+  ) async {
+    final timed = set.holdSeconds != null;
+    final result = await showDialog<EditSetResult>(
+      context: context,
+      builder: (_) => EditSetDialog(
+        title: '${exercise?.name ?? set.exerciseId} · set ${set.setIndex}',
+        initialValue: set.holdSeconds ?? set.repsCompleted ?? 0,
+        timed: timed,
+        units: units,
+        initialWeightKg: (exercise?.loadable ?? false) ? set.weightKg : null,
+      ),
+    );
+    if (result == null) return;
+
+    // Written straight to the row. Editing history deliberately does not
+    // re-run the progression rules — those already fired at the end of that
+    // session and the user acted on them, so silently re-deciding an
+    // advancement weeks later would be worse than a slightly stale call.
+    await ref.read(databaseProvider).updateSetValues(
+          set.id,
+          reps: timed ? null : result.value,
+          holdSeconds: timed ? result.value : null,
+          weightKg: result.weightKg,
+        );
   }
 
   String _label(SetRecord set, bool perSide) {

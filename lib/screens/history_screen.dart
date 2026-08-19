@@ -132,27 +132,6 @@ class _ProgressTabState extends ConsumerState<_ProgressTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        _CardSection(
-          title: 'Body weight',
-          action: TextButton.icon(
-            onPressed: () => LogWeightDialog.show(context),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Log'),
-          ),
-          child: TrendChart(
-            points: [
-              for (final e in weights)
-                TrendPoint(
-                  date: e.recordedAt,
-                  value: toDisplayWeight(e.weightKg, units),
-                ),
-            ],
-            formatValue: (v) =>
-                '${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1)}'
-                ' ${units.weightSuffix}',
-          ),
-        ),
-        const SizedBox(height: 12),
         if (selected == null)
           const _CardSection(
             title: 'Strength',
@@ -212,6 +191,31 @@ class _ProgressTabState extends ConsumerState<_ProgressTab> {
             ),
           ),
         ],
+        // Last, under the training charts. Body weight is context for the
+        // workout data rather than the point of the screen, and it was
+        // pushing the strength chart — the thing actually being tracked —
+        // below the fold.
+        const SizedBox(height: 12),
+        _CardSection(
+          title: 'Body weight',
+          action: TextButton.icon(
+            onPressed: () => LogWeightDialog.show(context),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Log'),
+          ),
+          child: TrendChart(
+            points: [
+              for (final e in weights)
+                TrendPoint(
+                  date: e.recordedAt,
+                  value: toDisplayWeight(e.weightKg, units),
+                ),
+            ],
+            formatValue: (v) =>
+                '${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1)}'
+                ' ${units.weightSuffix}',
+          ),
+        ),
       ],
     );
   }
