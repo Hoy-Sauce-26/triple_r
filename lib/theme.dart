@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// Roamfree (`../step_counter`) seeds from amber; this one is its own. The two
 /// stay siblings through *structure* — Material 3, flat surfaces, hierarchy
 /// from spacing and type rather than elevation — not through sharing a hue.
-const seedColor = Color(0xFF67FF7B);
+const seedColor = Color(0xFFA6FF67);
 
 ThemeData _theme(Brightness brightness) {
   final colors = ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);

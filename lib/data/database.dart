@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -63,6 +63,9 @@ class AppDatabase extends _$AppDatabase {
             // versions this supports, so the table is rebuilt from the
             // current schema and the surviving columns copied across.
             await m.alterTable(TableMigration(userProfiles));
+          }
+          if (from < 6) {
+            await m.addColumn(userProfiles, userProfiles.plannedRotationIndex);
           }
         },
         beforeOpen: (details) async {
@@ -284,6 +287,11 @@ class AppDatabase extends _$AppDatabase {
       ),
     );
   }
+
+  /// Records, or clears, the workout the user picked by hand.
+  Future<void> setPlannedRotation(int? rotationIndex) => updateProfile(
+        UserProfilesCompanion(plannedRotationIndex: Value(rotationIndex)),
+      );
 
   Future<int> nextSessionOrdinal() async {
     final last = await (select(workoutSessions)

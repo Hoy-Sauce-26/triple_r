@@ -617,4 +617,25 @@ void main() {
       expect(notifications.clears, greaterThan(0));
     });
   });
+
+  test('completing a workout consumes the hand-picked rotation', () async {
+    // The override is a correction to which session the user is on, and it is
+    // spent once a session records that. Keeping it would override every
+    // workout from then on rather than the one it was meant for.
+    await db.setPlannedRotation(2);
+    await controller().start();
+    expect((await db.profile).plannedRotationIndex, 2);
+
+    await controller().finish(completed: true);
+    expect((await db.profile).plannedRotationIndex, isNull);
+  });
+
+  test('abandoning a workout keeps the hand-picked rotation', () async {
+    // Nothing recorded the session, so the correction is still outstanding.
+    await db.setPlannedRotation(2);
+    await controller().start();
+    await controller().finish(completed: false);
+
+    expect((await db.profile).plannedRotationIndex, 2);
+  });
 }

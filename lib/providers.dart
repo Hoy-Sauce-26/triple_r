@@ -72,24 +72,17 @@ final nextSessionOrdinalProvider = FutureProvider<int>((ref) {
   return ref.watch(databaseProvider).nextSessionOrdinal();
 });
 
-/// A workout the user picked by hand, overriding the rotation, or null for
-/// whichever one is next.
+/// A workout the user picked by hand, overriding the rotation, or null to
+/// follow it.
 ///
-/// Deliberately not persisted: it applies to the workout about to be started
-/// and is cleared on the way back to the dashboard. A stored override would
-/// quietly outlive the reason for it.
-class SelectedRotation extends Notifier<int?> {
-  @override
-  int? build() => null;
-
-  void select(int index) => state = index;
-
-  /// Back to whichever workout the rotation says is next.
-  void clear() => state = null;
-}
-
-final selectedRotationProvider =
-    NotifierProvider<SelectedRotation, int?>(SelectedRotation.new);
+/// Read straight off the profile row rather than held in memory. It was
+/// transient at first, on the reasoning that it applies to the workout about
+/// to be started — but it is really a correction to the app's belief about
+/// which session the user is on, and dropping it on restart silently put them
+/// back on a workout they had already told the app they were past.
+final selectedRotationProvider = Provider<int?>((ref) {
+  return ref.watch(profileProvider).value?.plannedRotationIndex;
+});
 
 /// Which session number the next workout counts as.
 ///

@@ -20,6 +20,16 @@ class $UserProfilesTable extends UserProfiles
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _plannedRotationIndexMeta =
+      const VerificationMeta('plannedRotationIndex');
+  @override
+  late final GeneratedColumn<int> plannedRotationIndex = GeneratedColumn<int>(
+    'planned_rotation_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _unitSystemMeta = const VerificationMeta(
     'unitSystem',
   );
@@ -77,6 +87,7 @@ class $UserProfilesTable extends UserProfiles
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    plannedRotationIndex,
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
@@ -96,6 +107,15 @@ class $UserProfilesTable extends UserProfiles
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('planned_rotation_index')) {
+      context.handle(
+        _plannedRotationIndexMeta,
+        plannedRotationIndex.isAcceptableOrUnknown(
+          data['planned_rotation_index']!,
+          _plannedRotationIndexMeta,
+        ),
+      );
     }
     if (data.containsKey('unit_system')) {
       context.handle(
@@ -143,6 +163,10 @@ class $UserProfilesTable extends UserProfiles
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      plannedRotationIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}planned_rotation_index'],
+      ),
       unitSystem: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}unit_system'],
@@ -171,6 +195,16 @@ class $UserProfilesTable extends UserProfiles
 class UserProfile extends DataClass implements Insertable<UserProfile> {
   final int id;
 
+  /// A workout the user picked by hand, overriding the rotation, or null to
+  /// follow it.
+  ///
+  /// Persisted, because it is a correction to the app's belief about which
+  /// session the user is on — "I trained on Tuesday and did not log it" is
+  /// still true after a restart. Held only until a workout completes, at
+  /// which point the session row it produced carries the sequence forward and
+  /// this goes back to null.
+  final int? plannedRotationIndex;
+
   /// 'imperial' | 'metric'. Imperial is the default.
   final String unitSystem;
   final int defaultPairRestSeconds;
@@ -181,6 +215,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   final bool rotatePairOrder;
   const UserProfile({
     required this.id,
+    this.plannedRotationIndex,
     required this.unitSystem,
     required this.defaultPairRestSeconds,
     required this.defaultTripletRestSeconds,
@@ -190,6 +225,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || plannedRotationIndex != null) {
+      map['planned_rotation_index'] = Variable<int>(plannedRotationIndex);
+    }
     map['unit_system'] = Variable<String>(unitSystem);
     map['default_pair_rest_seconds'] = Variable<int>(defaultPairRestSeconds);
     map['default_triplet_rest_seconds'] = Variable<int>(
@@ -202,6 +240,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   UserProfilesCompanion toCompanion(bool nullToAbsent) {
     return UserProfilesCompanion(
       id: Value(id),
+      plannedRotationIndex: plannedRotationIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(plannedRotationIndex),
       unitSystem: Value(unitSystem),
       defaultPairRestSeconds: Value(defaultPairRestSeconds),
       defaultTripletRestSeconds: Value(defaultTripletRestSeconds),
@@ -216,6 +257,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserProfile(
       id: serializer.fromJson<int>(json['id']),
+      plannedRotationIndex: serializer.fromJson<int?>(
+        json['plannedRotationIndex'],
+      ),
       unitSystem: serializer.fromJson<String>(json['unitSystem']),
       defaultPairRestSeconds: serializer.fromJson<int>(
         json['defaultPairRestSeconds'],
@@ -231,6 +275,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'plannedRotationIndex': serializer.toJson<int?>(plannedRotationIndex),
       'unitSystem': serializer.toJson<String>(unitSystem),
       'defaultPairRestSeconds': serializer.toJson<int>(defaultPairRestSeconds),
       'defaultTripletRestSeconds': serializer.toJson<int>(
@@ -242,12 +287,16 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
 
   UserProfile copyWith({
     int? id,
+    Value<int?> plannedRotationIndex = const Value.absent(),
     String? unitSystem,
     int? defaultPairRestSeconds,
     int? defaultTripletRestSeconds,
     bool? rotatePairOrder,
   }) => UserProfile(
     id: id ?? this.id,
+    plannedRotationIndex: plannedRotationIndex.present
+        ? plannedRotationIndex.value
+        : this.plannedRotationIndex,
     unitSystem: unitSystem ?? this.unitSystem,
     defaultPairRestSeconds:
         defaultPairRestSeconds ?? this.defaultPairRestSeconds,
@@ -258,6 +307,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   UserProfile copyWithCompanion(UserProfilesCompanion data) {
     return UserProfile(
       id: data.id.present ? data.id.value : this.id,
+      plannedRotationIndex: data.plannedRotationIndex.present
+          ? data.plannedRotationIndex.value
+          : this.plannedRotationIndex,
       unitSystem: data.unitSystem.present
           ? data.unitSystem.value
           : this.unitSystem,
@@ -277,6 +329,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   String toString() {
     return (StringBuffer('UserProfile(')
           ..write('id: $id, ')
+          ..write('plannedRotationIndex: $plannedRotationIndex, ')
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
@@ -288,6 +341,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   @override
   int get hashCode => Object.hash(
     id,
+    plannedRotationIndex,
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
@@ -298,6 +352,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       identical(this, other) ||
       (other is UserProfile &&
           other.id == this.id &&
+          other.plannedRotationIndex == this.plannedRotationIndex &&
           other.unitSystem == this.unitSystem &&
           other.defaultPairRestSeconds == this.defaultPairRestSeconds &&
           other.defaultTripletRestSeconds == this.defaultTripletRestSeconds &&
@@ -306,12 +361,14 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
 
 class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   final Value<int> id;
+  final Value<int?> plannedRotationIndex;
   final Value<String> unitSystem;
   final Value<int> defaultPairRestSeconds;
   final Value<int> defaultTripletRestSeconds;
   final Value<bool> rotatePairOrder;
   const UserProfilesCompanion({
     this.id = const Value.absent(),
+    this.plannedRotationIndex = const Value.absent(),
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
@@ -319,6 +376,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   });
   UserProfilesCompanion.insert({
     this.id = const Value.absent(),
+    this.plannedRotationIndex = const Value.absent(),
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
@@ -326,6 +384,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   });
   static Insertable<UserProfile> custom({
     Expression<int>? id,
+    Expression<int>? plannedRotationIndex,
     Expression<String>? unitSystem,
     Expression<int>? defaultPairRestSeconds,
     Expression<int>? defaultTripletRestSeconds,
@@ -333,6 +392,8 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (plannedRotationIndex != null)
+        'planned_rotation_index': plannedRotationIndex,
       if (unitSystem != null) 'unit_system': unitSystem,
       if (defaultPairRestSeconds != null)
         'default_pair_rest_seconds': defaultPairRestSeconds,
@@ -344,6 +405,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
 
   UserProfilesCompanion copyWith({
     Value<int>? id,
+    Value<int?>? plannedRotationIndex,
     Value<String>? unitSystem,
     Value<int>? defaultPairRestSeconds,
     Value<int>? defaultTripletRestSeconds,
@@ -351,6 +413,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   }) {
     return UserProfilesCompanion(
       id: id ?? this.id,
+      plannedRotationIndex: plannedRotationIndex ?? this.plannedRotationIndex,
       unitSystem: unitSystem ?? this.unitSystem,
       defaultPairRestSeconds:
           defaultPairRestSeconds ?? this.defaultPairRestSeconds,
@@ -365,6 +428,9 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (plannedRotationIndex.present) {
+      map['planned_rotation_index'] = Variable<int>(plannedRotationIndex.value);
     }
     if (unitSystem.present) {
       map['unit_system'] = Variable<String>(unitSystem.value);
@@ -389,6 +455,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   String toString() {
     return (StringBuffer('UserProfilesCompanion(')
           ..write('id: $id, ')
+          ..write('plannedRotationIndex: $plannedRotationIndex, ')
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
@@ -2683,6 +2750,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 typedef $$UserProfilesTableCreateCompanionBuilder =
     UserProfilesCompanion Function({
       Value<int> id,
+      Value<int?> plannedRotationIndex,
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
@@ -2691,6 +2759,7 @@ typedef $$UserProfilesTableCreateCompanionBuilder =
 typedef $$UserProfilesTableUpdateCompanionBuilder =
     UserProfilesCompanion Function({
       Value<int> id,
+      Value<int?> plannedRotationIndex,
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
@@ -2708,6 +2777,11 @@ class $$UserProfilesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get plannedRotationIndex => $composableBuilder(
+    column: $table.plannedRotationIndex,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2746,6 +2820,11 @@ class $$UserProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get plannedRotationIndex => $composableBuilder(
+    column: $table.plannedRotationIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get unitSystem => $composableBuilder(
     column: $table.unitSystem,
     builder: (column) => ColumnOrderings(column),
@@ -2778,6 +2857,11 @@ class $$UserProfilesTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get plannedRotationIndex => $composableBuilder(
+    column: $table.plannedRotationIndex,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get unitSystem => $composableBuilder(
     column: $table.unitSystem,
@@ -2832,12 +2916,14 @@ class $$UserProfilesTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<int?> plannedRotationIndex = const Value.absent(),
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion(
                 id: id,
+                plannedRotationIndex: plannedRotationIndex,
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
@@ -2846,12 +2932,14 @@ class $$UserProfilesTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<int?> plannedRotationIndex = const Value.absent(),
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion.insert(
                 id: id,
+                plannedRotationIndex: plannedRotationIndex,
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
