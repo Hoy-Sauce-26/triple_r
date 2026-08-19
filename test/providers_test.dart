@@ -112,7 +112,8 @@ void main() {
     expect(container.read(nextSessionPlanProvider)!.rotationIndex, 0);
 
     // Trained yesterday without logging it, so start workout 2 instead.
-    container.read(selectedRotationProvider.notifier).select(1);
+    await db.setPlannedRotation(1);
+    await settle();
     expect(container.read(nextSessionPlanProvider)!.rotationIndex, 1);
     expect(container.read(plannedSessionOrdinalProvider), 1);
 
@@ -127,7 +128,7 @@ void main() {
             tripletRestSeconds: 60,
           ),
         );
-    container.read(selectedRotationProvider.notifier).clear();
+    await db.setPlannedRotation(null);
     await settleAfterSession();
 
     expect(
@@ -214,5 +215,30 @@ void main() {
     final warmup = container.read(nextSessionPlanProvider)!.warmup;
     expect(warmup, hasLength(5));
     expect(warmup.map((w) => w.name), contains('Arch Hangs'));
+  });
+
+  test('a hand-picked workout survives a restart', () async {
+    // It is a correction to which session the user is on, not a preference
+    // about the one screen they are looking at. Losing it on restart put them
+    // back on a workout they had already said they were past — silently.
+    await settle();
+    await db.setPlannedRotation(2);
+    await settle();
+    expect(container.read(nextSessionPlanProvider)!.rotationIndex, 2);
+
+    // A fresh container over the same database, as after a relaunch.
+    final restarted = ProviderContainer(
+      overrides: [databaseProvider.overrideWithValue(db)],
+    );
+    addTearDown(restarted.dispose);
+    restarted.listen(nextSessionPlanProvider, (_, _) {});
+    await restarted.read(profileProvider.future);
+    await restarted.read(nextSessionOrdinalProvider.future);
+
+    expect(
+      restarted.read(nextSessionPlanProvider)!.rotationIndex,
+      2,
+      reason: 'still on the workout the user said they were on',
+    );
   });
 }

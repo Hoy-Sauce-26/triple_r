@@ -425,6 +425,12 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     ref.read(sessionClockProvider.notifier).stop();
     _lastNotification = null;
     ref.read(workoutNotificationProvider).clear().ignore();
+    if (completed) {
+      // Consumed. The session row now carries the ordinal forward, so the
+      // hand-picked workout has done its job and must not keep overriding the
+      // rotation for every workout after this one.
+      await _db.setPlannedRotation(null);
+    }
     ref.invalidate(completedSessionCountProvider);
     ref.invalidate(nextSessionOrdinalProvider);
     state = const AsyncData(null);

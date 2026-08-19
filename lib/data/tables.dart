@@ -18,6 +18,16 @@ class UserProfiles extends Table {
   // ignore: recursive_getters
   IntColumn get id => integer().check(id.equals(1)).withDefault(const Constant(1))();
 
+  /// A workout the user picked by hand, overriding the rotation, or null to
+  /// follow it.
+  ///
+  /// Persisted, because it is a correction to the app's belief about which
+  /// session the user is on — "I trained on Tuesday and did not log it" is
+  /// still true after a restart. Held only until a workout completes, at
+  /// which point the session row it produced carries the sequence forward and
+  /// this goes back to null.
+  IntColumn get plannedRotationIndex => integer().nullable()();
+
   /// 'imperial' | 'metric'. Imperial is the default.
   TextColumn get unitSystem =>
       text().withLength(min: 6, max: 8).withDefault(const Constant('imperial'))();

@@ -113,9 +113,6 @@ Future<void> _beginWorkout(BuildContext context, WidgetRef ref) async {
   // time is derived from `startedAt`, so resuming picks up the true total.
   ref.read(sessionClockProvider.notifier).stop();
   ref.read(warmupChecklistProvider.notifier).clear();
-  // A hand-picked workout applies to the one just started, not to the next
-  // one — the rotation takes over again from here.
-  ref.read(selectedRotationProvider.notifier).clear();
 }
 
 /// Lets the user start a workout other than the one the rotation is due.
@@ -140,9 +137,8 @@ class _WorkoutPicker extends ConsumerWidget {
           ButtonSegment(value: 2, label: Text('3')),
         ],
         selected: {selected},
-        onSelectionChanged: (values) => ref
-            .read(selectedRotationProvider.notifier)
-            .select(values.first),
+        onSelectionChanged: (values) =>
+            ref.read(databaseProvider).setPlannedRotation(values.first),
       ),
     );
   }

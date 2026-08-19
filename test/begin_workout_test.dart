@@ -136,7 +136,11 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the hand-picked workout does not stick around', (tester) async {
+  testWidgets('a hand-picked workout is still there after backing out',
+      (tester) async {
+    // It says which session the user is on, not which screen they were
+    // looking at. Reverting it silently would put them back on a workout they
+    // had already told the app they were past.
     await pumpApp(tester);
     await tester.tap(find.text('3'));
     await tester.pumpAndSettle();
@@ -147,8 +151,12 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    // Back to whatever the rotation says, not stuck on the override.
-    expect(find.text('Workout 1 of 3'), findsOneWidget);
+    expect(find.text('Workout 3 of 3'), findsOneWidget);
+    expect(
+      (await db.profile).plannedRotationIndex,
+      2,
+      reason: 'persisted, so a restart does not quietly undo it',
+    );
 
     await disposeApp(tester);
   });
