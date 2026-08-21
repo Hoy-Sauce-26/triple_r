@@ -34,6 +34,13 @@ final alertsProvider = Provider<Alerts>((ref) {
 /// smoothness, never correctness.
 const tickInterval = Duration(milliseconds: 200);
 
+/// How many seconds of gentle blips lead into the end-of-rest chime.
+///
+/// Long enough to put a bar back on the rack or get under it; short enough
+/// that it is a warning rather than a second timer. The blips are a separate,
+/// quieter cue than [Alerts.restComplete] — see there for why.
+const restCountdownLeadIn = 5;
+
 /// The rest countdown between sets.
 ///
 /// Owns its own ticker so the chime fires whether or not a widget is watching
@@ -46,6 +53,11 @@ const tickInterval = Duration(milliseconds: 200);
 class RestTimerController extends Notifier<Countdown> {
   TickerHandle? _handle;
   bool _alerted = false;
+
+  /// The last whole second the lead-in blipped for, so five ticks a second
+  /// produce one blip rather than five. Null when nothing has blipped for the
+  /// current run.
+  int? _countedDown;
 
   @override
   Countdown build() {
@@ -63,6 +75,7 @@ class RestTimerController extends Notifier<Countdown> {
 
   void start(Duration length) {
     _alerted = false;
+    _countedDown = null;
     state = state.start(length, _clock.now());
     _startTicking();
   }
@@ -89,7 +102,10 @@ class RestTimerController extends Notifier<Countdown> {
       // Extending past a completed timer starts a fresh run, so the alert
       // must be armed again or the second expiry would pass in silence.
       if (wasFinished) _alerted = false;
-        _startTicking();
+      // Whatever was blipped for belonged to the old deadline; the new one
+      // gets its own lead-in.
+      _countedDown = null;
+      _startTicking();
     }
   }
 
@@ -103,6 +119,7 @@ class RestTimerController extends Notifier<Countdown> {
 
   void reset(Duration length) {
     _alerted = false;
+    _countedDown = null;
     state = state.reset(length);
     _stopTicking();
   }
@@ -128,9 +145,29 @@ class RestTimerController extends Notifier<Countdown> {
       _stopTicking();
         return;
     }
+    _blipIfCountingDown(now);
     // Republish a fresh instance so watchers recompute `remaining` —
     // reassigning the same object notifies nobody.
     state = state.tick();
+  }
+
+  /// Fires one gentle blip per whole second over the last
+  /// [restCountdownLeadIn] seconds, so the end-of-rest chime is expected
+  /// rather than startling.
+  ///
+  /// Keyed off the *ceiling* of the remaining time, which is the number the
+  /// screen is showing: at 4.6s left the display says 5 and so does this. A
+  /// phone that slept through part of the lead-in comes back and blips for the
+  /// second it is actually on rather than replaying the ones it missed —
+  /// [_countedDown] only guards against repeating, never against skipping.
+  void _blipIfCountingDown(DateTime now) {
+    final left = state.remaining(now);
+    if (left <= Duration.zero) return;
+    final second = (left.inMilliseconds / 1000).ceil();
+    if (second > restCountdownLeadIn) return;
+    if (_countedDown == second) return;
+    _countedDown = second;
+    ref.read(alertsProvider).restCountdown();
   }
 
 }

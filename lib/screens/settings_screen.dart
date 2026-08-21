@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
 import '../domain/backup.dart';
+import '../domain/units.dart';
 import '../providers.dart';
 import '../state/timer_providers.dart';
 
@@ -73,6 +74,13 @@ class SettingsScreen extends ConsumerWidget {
                     UserProfilesCompanion(defaultTripletRestSeconds: Value(v)),
                   ),
             ),
+            _IncrementSetting(
+              units: ref.watch(unitSystemProvider),
+              incrementKg: p.loadIncrementKg,
+              onChanged: (kg) => ref.read(databaseProvider).updateProfile(
+                    UserProfilesCompanion(loadIncrementKg: Value(kg)),
+                  ),
+            ),
             const Divider(height: 32),
             const _SectionHeader('Backup'),
             const _BackupSection(),
@@ -131,6 +139,74 @@ class _RestSetting extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The load step the "add weight?" prompt offers by default.
+///
+/// A fixed list rather than a free field, for the same reason rest moves in
+/// 15-second steps: these are the plate pairs that exist, and the answer is
+/// decided by what is in the user's gym rather than by fine-tuning.
+///
+/// An exercise that has already been moved by some other amount keeps that
+/// amount — the app remembers a step per exercise, and this is the fallback
+/// for the ones it has no memory of yet. The subtitle says so, because
+/// otherwise changing this and seeing one exercise ignore it looks broken.
+class _IncrementSetting extends StatelessWidget {
+  const _IncrementSetting({
+    required this.units,
+    required this.incrementKg,
+    required this.onChanged,
+  });
+
+  final UnitSystem units;
+
+  /// Null until the user picks one, meaning "whatever suits the units".
+  final double? incrementKg;
+
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final choices = incrementChoices(units);
+    final current = toDisplayWeight(
+      incrementKg ?? seedIncrementKg(units),
+      units,
+    );
+    // Matched loosely: the stored value is kilograms, so an imperial 2.5 lb
+    // comes back as 2.4999999… and an equality test would select nothing.
+    final selected = choices.firstWhere(
+      (c) => (c - current).abs() < 0.01,
+      orElse: () => -1,
+    );
+
+    return ListTile(
+      title: const Text('Weight added when you progress'),
+      subtitle: Text(
+        'The step offered when an exercise is ready for more. Exercises you '
+        'have already moved by a different amount keep theirs.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      trailing: DropdownButton<double>(
+        value: selected < 0 ? null : selected,
+        hint: Text('${current.toStringAsFixed(2)} ${units.weightSuffix}'),
+        items: [
+          for (final choice in choices)
+            DropdownMenuItem(
+              value: choice,
+              child: Text(
+                '${choice == choice.roundToDouble() ? choice.toStringAsFixed(0) : choice}'
+                ' ${units.weightSuffix}',
+              ),
+            ),
+        ],
+        onChanged: (value) {
+          if (value == null) return;
+          onChanged(fromDisplayWeight(value, units));
+        },
+      ),
+      isThreeLine: true,
     );
   }
 }

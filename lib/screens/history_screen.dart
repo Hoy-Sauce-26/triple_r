@@ -162,26 +162,48 @@ class _ProgressTabState extends ConsumerState<_ProgressTab> {
                 const SizedBox(height: 8),
                 for (final event in events.take(12))
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.trending_up,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${_name(event.toExerciseId)} '
-                            '— from ${_name(event.fromExerciseId)}',
-                            style: theme.textTheme.bodyMedium,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            Icons.trending_up,
+                            size: 16,
+                            color: theme.colorScheme.primary,
                           ),
                         ),
-                        Text(
-                          '${event.date.day}/${event.date.month}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 8),
+                        // Two lines rather than one. Exercise names are long
+                        // — "Bulgarian Split Squat — from Split Squat" ran
+                        // into the date and ellipsed away the half that says
+                        // what changed.
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _name(event.toExerciseId),
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                              Text(
+                                'from ${_name(event.fromExerciseId)}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${event.date.day}/${event.date.month}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ],
@@ -204,6 +226,7 @@ class _ProgressTabState extends ConsumerState<_ProgressTab> {
             label: const Text('Log'),
           ),
           child: TrendChart(
+            axisLabel: 'Body weight (${units.weightSuffix})',
             points: [
               for (final e in weights)
                 TrendPoint(
@@ -266,15 +289,13 @@ class _ExerciseProgressCard extends ConsumerWidget {
               if (id != null) onChanged(id);
             },
           ),
-          const SizedBox(height: 4),
-          if (series != null) ...[
-            Text(
-              series.axisLabel,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
+          const SizedBox(height: 8),
+          if (series != null)
+            // The axis label is handed to the chart rather than printed above
+            // it: over the card it read as a second heading, and left the
+            // numbers down the side of the plot unexplained.
             TrendChart(
+              axisLabel: series.axisLabel,
               points: [
                 for (final p in series.points)
                   TrendPoint(
@@ -288,7 +309,6 @@ class _ExerciseProgressCard extends ConsumerWidget {
                   ? '${v.round()} ${units.weightSuffix}'
                   : v.round().toString(),
             ),
-          ],
         ],
       ),
     );

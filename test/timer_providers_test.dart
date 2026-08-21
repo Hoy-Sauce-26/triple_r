@@ -51,6 +51,84 @@ void main() {
   }
 
   group('rest timer', () {
+    test('blips once a second over the last five, then chimes', () {
+      rest().start(const Duration(seconds: 90));
+
+      elapse(const Duration(seconds: 84));
+      expect(
+        alerts.restCountdowns,
+        isEmpty,
+        reason: 'six seconds left is not yet the lead-in',
+      );
+
+      // 5, 4, 3, 2 and 1 second remaining: one blip each, and none of them is
+      // the end-of-rest chime.
+      for (var i = 0; i < 5; i++) {
+        elapse(const Duration(seconds: 1));
+      }
+      expect(alerts.restCountdowns, hasLength(5));
+      expect(alerts.restCompletions, isEmpty);
+
+      elapse(const Duration(seconds: 1));
+      expect(alerts.restCompletions, hasLength(1));
+      expect(
+        alerts.restCountdowns,
+        hasLength(5),
+        reason: 'the deadline itself is the chime, not a sixth blip',
+      );
+    });
+
+    test('five ticks a second are still one blip a second', () {
+      rest().start(const Duration(seconds: 6));
+      elapse(const Duration(seconds: 2));
+      final before = alerts.restCountdowns.length;
+
+      // Five real ticks spanning exactly one second of the lead-in.
+      for (var i = 0; i < 5; i++) {
+        elapse(const Duration(milliseconds: 200));
+      }
+      expect(
+        alerts.restCountdowns.length - before,
+        1,
+        reason: 'the blip is keyed to the second on screen, not to the tick',
+      );
+    });
+
+    test('a phone that slept through the lead-in does not replay it', () {
+      rest().start(const Duration(seconds: 90));
+
+      // One late tick covering the whole lead-in, which is exactly what a
+      // throttled timer delivers.
+      elapse(const Duration(seconds: 88));
+      expect(
+        alerts.restCountdowns,
+        hasLength(1),
+        reason: 'blip for the second it is actually on, not the ones missed',
+      );
+    });
+
+    test('skipping the rest blips at nobody', () {
+      rest().start(const Duration(seconds: 3));
+      rest().skip();
+      elapse(const Duration(seconds: 3));
+      expect(alerts.restCountdowns, isEmpty);
+      expect(alerts.restCompletions, isEmpty);
+    });
+
+    test('extending past the lead-in arms it again', () {
+      rest().start(const Duration(seconds: 6));
+      elapse(const Duration(seconds: 3));
+      expect(alerts.restCountdowns, hasLength(1));
+
+      rest().extend(const Duration(seconds: 15));
+      elapse(const Duration(seconds: 14));
+      expect(
+        alerts.restCountdowns.length,
+        greaterThan(1),
+        reason: 'the new deadline gets its own lead-in',
+      );
+    });
+
     test('counts down and fires the chime exactly once', () {
       rest().start(const Duration(seconds: 90));
       expect(container.read(restTimerProvider).isRunning, isTrue);

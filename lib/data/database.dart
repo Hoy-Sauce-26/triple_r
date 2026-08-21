@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -66,6 +66,17 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             await m.addColumn(userProfiles, userProfiles.plannedRotationIndex);
+          }
+          if (from < 7) {
+            await m.addColumn(userProfiles, userProfiles.loadIncrementKg);
+            // set_records.weight_kg went from NOT NULL DEFAULT 0 to nullable,
+            // so null can mean "no weight entered" as distinct from a
+            // deliberate zero. Widening a column is still a table rebuild in
+            // SQLite; every existing row already holds a number, so the copy
+            // is straight across and old rows keep reading as explicit zeros.
+            await m.alterTable(TableMigration(setRecords));
+            // The rebuild drops the table's indexes with the old table.
+            await _createIndexes(m);
           }
         },
         beforeOpen: (details) async {
@@ -277,7 +288,7 @@ class AppDatabase extends _$AppDatabase {
     String id, {
     required int? reps,
     required int? holdSeconds,
-    required double weightKg,
+    required double? weightKg,
   }) async {
     await (update(setRecords)..where((s) => s.id.equals(id))).write(
       SetRecordsCompanion(

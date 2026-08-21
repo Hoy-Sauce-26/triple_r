@@ -221,8 +221,8 @@ class _ExerciseGroupCard extends ConsumerWidget {
     final value = set.holdSeconds != null
         ? '${set.holdSeconds}s'
         : '${set.repsCompleted}${perSide ? '/side' : ''}';
-    if (set.weightKg > 0) {
-      return '$value @ ${formatWeight(set.weightKg, units)}';
+    if (set.weightKg case final weight?) {
+      return '$value @ ${formatWeight(weight, units)}';
     }
     return value;
   }

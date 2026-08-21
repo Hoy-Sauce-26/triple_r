@@ -4,7 +4,6 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart';
-import '../domain/countdown.dart';
 import '../domain/progression.dart';
 import '../domain/session_plan.dart';
 import '../domain/workout_steps.dart';
@@ -266,13 +265,23 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     final String body;
     final int progress;
     final int maxProgress;
+    DateTime? countdownTo;
 
     if (rest.isRunning || rest.isPaused) {
       final remaining = ref.read(restTimerProvider.notifier).remaining;
-      title = 'Resting · ${formatDuration(remaining)}';
+      // The seconds are deliberately *not* in the title. Text only changes
+      // when this method runs, and it only runs while the app is scheduled —
+      // so a phone in a pocket left the shade insisting on the second Flutter
+      // was last awake for, which is the whole of the reported bug. The
+      // deadline below is counted down by the platform instead, correctly,
+      // whether or not any Dart is running.
+      title = 'Resting';
       body = 'Next up: $exercise · $detail';
       maxProgress = rest.total.inSeconds;
       progress = maxProgress - remaining.inSeconds;
+      // A paused rest has no deadline to count toward; it also has no
+      // chronometer, so the bar is all it gets.
+      countdownTo = rest.isRunning ? rest.deadline : null;
     } else {
       final total = session.stepsTotal;
       title = exercise;
@@ -284,7 +293,8 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     // The rest ticks five times a second; the notification only says whole
     // seconds. Comparing the rendered content collapses those ticks into one
     // post per second, instead of five posts saying the same thing.
-    final rendered = '$title|$body|$progress|$maxProgress';
+    final rendered =
+        '$title|$body|$progress|$maxProgress|${countdownTo?.microsecondsSinceEpoch}';
     if (rendered == _lastNotification) return;
     _lastNotification = rendered;
 
@@ -294,6 +304,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
           body: body,
           progress: progress,
           maxProgress: maxProgress,
+          countdownTo: countdownTo,
         )
         .ignore();
   }
@@ -313,7 +324,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
   Future<void> logSet({
     required int? reps,
     required int? holdSeconds,
-    double weightKg = 0,
+    double? weightKg,
   }) async {
     final session = state.value;
     final step = session?.currentStep;
@@ -386,7 +397,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     required int setIndex,
     required int? reps,
     required int? holdSeconds,
-    double weightKg = 0,
+    double? weightKg,
   }) async {
     final session = state.value;
     if (session == null) return;
@@ -447,6 +458,7 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
     if (session == null) return const [];
 
     final units = ref.read(unitSystemProvider);
+    final configuredIncrementKg = (await _db.profile).loadIncrementKg;
     final positions = await _positions();
     final sets = await _db.setsForSession(session.id);
     final outcomes = <SessionOutcome>[];
@@ -467,22 +479,39 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
           .map((r) => r.repsCompleted ?? r.holdSeconds ?? 0)
           .toList();
 
+      // What the user actually had on the bar, which is the load the prompt
+      // must add to. The stored working load only moves when an add-weight
+      // prompt is accepted, so someone who simply typed 10 lb into the logger
+      // still had zero recorded against the exercise — and the next prompt
+      // offered them "2.5 lb" as a total, wiping the ten they had been
+      // lifting all along. The log is the truth about what was lifted; the
+      // working load is only the app's plan for next time.
+      final workingLoadKg =
+          _loadUsed(entry.value) ?? existing?.workingLoadKg ?? 0;
+
       final evaluation = evaluate(
         contextFor(
           path: path,
           branch: branch,
           exerciseId: exerciseId,
-          workingLoadKg: existing?.workingLoadKg ?? 0,
+          workingLoadKg: workingLoadKg,
           lastIncrementKg: existing?.lastIncrementKg,
           consecutiveFailures: existing?.consecutiveFailures ?? 0,
           alreadyMastered: existing?.masteredAt != null,
         ),
         values,
         units: units,
+        configuredIncrementKg: configuredIncrementKg,
       );
 
       await _db.saveExerciseState(
         exerciseId,
+        // Written back even when nothing else changed, so the exercise's plan
+        // for next session tracks what the user is really lifting rather than
+        // waiting for a prompt to be accepted.
+        workingLoadKg: workingLoadKg == (existing?.workingLoadKg ?? 0)
+            ? null
+            : workingLoadKg,
         consecutiveFailures: evaluation.consecutiveFailures,
         masteredAt: evaluation.markMastered
             ? ref.read(clockProvider).now()
@@ -542,6 +571,22 @@ class ActiveSessionController extends AsyncNotifier<ActiveSession?> {
         break;
     }
   }
+}
+
+/// The heaviest load recorded across [records], or null if none of them
+/// carried a weight entry at all.
+///
+/// The heaviest rather than the last: a set logged light by mistake and then
+/// corrected should not decide the exercise's load, and a genuine drop-set
+/// still tops out at the working weight.
+double? _loadUsed(List<SetRecord> records) {
+  double? best;
+  for (final record in records) {
+    final weight = record.weightKg;
+    if (weight == null) continue;
+    if (best == null || weight > best) best = weight;
+  }
+  return best;
 }
 
 /// A prompt to show on the summary screen.

@@ -11,8 +11,14 @@ void main() {
     ExerciseContext context,
     List<int> sets, {
     UnitSystem units = UnitSystem.imperial,
+    double? configuredIncrementKg,
   }) =>
-      evaluate(context, sets, units: units);
+      evaluate(
+        context,
+        sets,
+        units: units,
+        configuredIncrementKg: configuredIncrementKg,
+      );
 
   /// A mid-branch pair exercise: Full Push-ups, with Diamond above and
   /// Incline below.
@@ -185,6 +191,47 @@ void main() {
       final result = run(deadlift(), [8, 8, 8]);
       final outcome = result.outcome as AddLoadOutcome;
       expect(kgToPounds(outcome.suggestedIncrementKg), closeTo(2.5, 1e-9));
+    });
+
+    test('uses the increment configured in settings when nothing is '
+        'remembered', () {
+      final result = run(
+        deadlift(),
+        [8, 8, 8],
+        configuredIncrementKg: poundsToKg(5),
+      );
+      final outcome = result.outcome as AddLoadOutcome;
+      expect(kgToPounds(outcome.suggestedIncrementKg), closeTo(5, 1e-9));
+      expect(
+        kgToPounds(outcome.resultingLoadKg),
+        closeTo(kgToPounds(100) + 5, 1e-9),
+      );
+    });
+
+    test('what this exercise last moved by still beats the setting', () {
+      // A deadlift that has been climbing in 10 lb steps does not drop to the
+      // 5 lb step someone chose for their weighted pull-ups.
+      final result = run(
+        deadlift(increment: poundsToKg(10)),
+        [8, 8, 8],
+        configuredIncrementKg: poundsToKg(5),
+      );
+      expect(
+        kgToPounds((result.outcome as AddLoadOutcome).suggestedIncrementKg),
+        closeTo(10, 1e-9),
+      );
+    });
+
+    test('the configured increment applies to taking weight off too', () {
+      final result = run(
+        deadlift(failures: 1),
+        [4, 4, 4],
+        configuredIncrementKg: poundsToKg(5),
+      );
+      expect(
+        kgToPounds((result.outcome as ReduceLoadOutcome).resultingLoadKg),
+        closeTo(kgToPounds(100) - 5, 1e-9),
+      );
     });
 
     test('seeds at 1 kg for metric users', () {

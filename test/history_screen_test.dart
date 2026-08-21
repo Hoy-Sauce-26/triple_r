@@ -207,8 +207,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Progressions'), findsOneWidget);
+      // Two lines, not one: long exercise names ran into the date and the
+      // "from" half ellipsed away. Scoped to the card, because the strength
+      // chart's exercise picker above it names the same exercise.
+      final card = find.ancestor(
+        of: find.text('Progressions'),
+        matching: find.byType(Card),
+      );
       expect(
-        find.textContaining('Diamond Push-ups — from Full Push-ups'),
+        find.descendant(of: card, matching: find.text('Diamond Push-ups')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('from Full Push-ups')),
         findsOneWidget,
       );
 

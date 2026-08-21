@@ -36,6 +36,15 @@ class UserProfiles extends Table {
 
   IntColumn get defaultTripletRestSeconds => integer().withDefault(const Constant(60))();
 
+  /// The load step the "add weight?" prompt offers for an exercise that has
+  /// no remembered increment of its own.
+  ///
+  /// Null means "whatever suits the unit system" — 2.5 lb, or 1 kg for metric
+  /// users. Kept nullable rather than defaulted so switching units still gets
+  /// a sensible step for anyone who has never opened this setting, and so the
+  /// stored number is only ever one the user actually chose.
+  RealColumn get loadIncrementKg => real().nullable()();
+
   /// Whether to rotate which pair comes first each session. Not part of the
   /// Recommended Routine — see `docs/PLAN.md` §5.1.
   BoolColumn get rotatePairOrder => boolean().withDefault(const Constant(true))();
@@ -92,8 +101,13 @@ class ExerciseStates extends Table {
   RealColumn get workingLoadKg => real().withDefault(const Constant(0))();
 
   /// What the user last chose to add here, remembered so the "add weight?"
-  /// prompt can pre-fill it. Null seeds the prompt at 2.5 lb / 1 kg.
-  /// Deliberately not a setting — see `docs/PLAN.md` §2.2.1.
+  /// prompt can pre-fill it.
+  ///
+  /// Null falls back to [UserProfiles.loadIncrementKg] and then to the unit
+  /// seed — see `incrementKgFor`. `docs/PLAN.md` §2.2.1 says this is
+  /// deliberately *not* a setting; there is a setting now, and this still
+  /// wins over it, because a weighted pull-up and a barbell deadlift do not
+  /// climb at the same rate.
   RealColumn get lastIncrementKg => real().nullable()();
 
   IntColumn get consecutiveFailures => integer().withDefault(const Constant(0))();
@@ -170,7 +184,14 @@ class SetRecords extends Table {
 
   /// The load actually used for this set, independent of the exercise's
   /// current working load.
-  RealColumn get weightKg => real().withDefault(const Constant(0))();
+  ///
+  /// **Null is not zero.** Null means no weight was entered — a bodyweight
+  /// set, or a loadable exercise the user did not bother to record a load
+  /// for; zero means the user said, explicitly, that this set carried nothing
+  /// extra. That distinction is what lets the logger leave the field alone
+  /// when someone types 0 rather than re-seeding it from the working load,
+  /// and it is why this column is nullable in schema 7.
+  RealColumn get weightKg => real().nullable()();
 
   DateTimeColumn get recordedAt => dateTime()();
 

@@ -59,6 +59,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   drift_dev: ^2.34.0
   build_runner: ^2.15.1
+  # Only for the migration test, which hand-builds an old schema before drift
+  # opens it. drift depends on this already; naming it here is what lets the
+  # test say `CommonDatabase` out loud.
+  sqlite3: ^3.5.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

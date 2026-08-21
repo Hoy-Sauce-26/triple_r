@@ -248,3 +248,4 @@ final _checkViolation = predicate(
   (e) => e.toString().contains('CHECK constraint failed'),
   'a SQLite CHECK constraint violation',
 );
+
