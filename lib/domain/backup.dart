@@ -41,6 +41,7 @@ Future<String> exportBackup(AppDatabase db, {DateTime? now}) async {
       'defaultPairRestSeconds': profile.defaultPairRestSeconds,
       'defaultTripletRestSeconds': profile.defaultTripletRestSeconds,
       'rotatePairOrder': profile.rotatePairOrder,
+      'loadIncrementKg': profile.loadIncrementKg,
     },
     'bodyWeights': [
       for (final e in await db.select(db.bodyWeightEntries).get())
@@ -178,6 +179,9 @@ Future<void> restoreBackup(AppDatabase db, String json) async {
             defaultTripletRestSeconds:
                 Value(profile['defaultTripletRestSeconds'] as int? ?? 60),
             rotatePairOrder: Value(profile['rotatePairOrder'] as bool? ?? true),
+            // Absent in backups taken before schema 7, and null there means
+            // "no preference" either way, so no fallback is needed.
+            loadIncrementKg: Value(_toDouble(profile['loadIncrementKg'])),
           ),
         );
 
@@ -246,7 +250,10 @@ Future<void> restoreBackup(AppDatabase db, String json) async {
               setIndex: s['setIndex'] as int,
               repsCompleted: Value(s['repsCompleted'] as int?),
               holdSeconds: Value(s['holdSeconds'] as int?),
-              weightKg: Value(_toDouble(s['weightKg']) ?? 0),
+              // Null stays null: it means no weight was entered, which is not
+              // the same as a set logged at zero. Backups from before schema
+              // 7 always carry a number, so they restore unchanged.
+              weightKg: Value(_toDouble(s['weightKg'])),
               recordedAt: _requireDate(s['recordedAt'], 'sets.recordedAt'),
             ),
           );

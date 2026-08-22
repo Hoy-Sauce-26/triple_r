@@ -89,7 +89,10 @@ ExerciseSeries buildExerciseSeries(String exerciseId, List<SetRecord> sets) {
   for (final entry in bySession.entries) {
     final rows = entry.value;
     final value = switch (kind) {
-      SeriesKind.weightKg => _max(rows.map((r) => r.weightKg)),
+      // A set with no weight entry counts as zero here: the chart plots the
+      // heaviest set of the session, and an unrecorded load cannot outweigh a
+      // recorded one.
+      SeriesKind.weightKg => _max(rows.map((r) => r.weightKg ?? 0)),
       SeriesKind.seconds =>
         _max(rows.map((r) => (r.holdSeconds ?? 0).toDouble())),
       SeriesKind.reps => _max(rows.map((r) => (r.repsCompleted ?? 0).toDouble())),

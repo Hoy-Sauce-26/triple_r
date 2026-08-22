@@ -13,7 +13,10 @@ class EditSetResult {
   const EditSetResult({required this.value, required this.weightKg});
 
   final int value;
-  final double weightKg;
+
+  /// Null when the field was left empty — no weight recorded, as distinct
+  /// from a set the user says carried nothing extra.
+  final double? weightKg;
 }
 
 class EditSetDialog extends StatefulWidget {
@@ -40,8 +43,10 @@ class EditSetDialog extends StatefulWidget {
 
 class _EditSetDialogState extends State<EditSetDialog> {
   late final _value = TextEditingController(text: '${widget.initialValue}');
+  // A stored zero renders as "0", not as an empty field: it is a value the
+  // user entered, and blanking it would quietly discard it on the next save.
   late final _weight = TextEditingController(
-    text: widget.initialWeightKg == null || widget.initialWeightKg == 0
+    text: widget.initialWeightKg == null
         ? ''
         : formatWeight(widget.initialWeightKg!, widget.units, withSuffix: false),
   );
@@ -56,10 +61,12 @@ class _EditSetDialogState extends State<EditSetDialog> {
   void _submit() {
     final parsed = int.tryParse(_value.text.trim());
     if (parsed == null || parsed < 0) return;
+    final typed = double.tryParse(_weight.text.trim());
     Navigator.of(context).pop(
       EditSetResult(
         value: parsed,
-        weightKg: fromDisplayWeight(double.tryParse(_weight.text) ?? 0, widget.units),
+        weightKg:
+            typed == null ? null : fromDisplayWeight(typed, widget.units),
       ),
     );
   }
@@ -93,6 +100,7 @@ class _EditSetDialogState extends State<EditSetDialog> {
               onSubmitted: (_) => _submit(),
               decoration: InputDecoration(
                 labelText: 'Added weight (${widget.units.weightSuffix})',
+                helperText: 'Empty records nothing; 0 is no added weight.',
                 border: const OutlineInputBorder(),
               ),
             ),

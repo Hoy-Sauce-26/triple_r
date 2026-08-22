@@ -35,7 +35,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -66,6 +66,24 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             await m.addColumn(userProfiles, userProfiles.plannedRotationIndex);
+          }
+          if (from < 7) {
+            await m.addColumn(userProfiles, userProfiles.loadIncrementKg);
+            // set_records.weight_kg went from NOT NULL DEFAULT 0 to nullable,
+            // so null can mean "no weight entered" as distinct from a
+            // deliberate zero. Widening a column is still a table rebuild in
+            // SQLite.
+            await m.alterTable(TableMigration(setRecords));
+            // The rebuild drops the table's indexes with the old table.
+            await _createIndexes(m);
+            // Then every stored zero becomes null. Under the old schema the
+            // column could not be empty and the UI could not enter a zero, so
+            // a zero there never meant "lifted nothing" — it meant the column
+            // had a default and nobody filled it. Copying those across as
+            // deliberate zeros put "@ 0 lb" on every push-up ever logged.
+            // Only rows written from v7 onward can mean it.
+            await (update(setRecords)..where((s) => s.weightKg.equals(0)))
+                .write(const SetRecordsCompanion(weightKg: Value(null)));
           }
         },
         beforeOpen: (details) async {
@@ -277,7 +295,7 @@ class AppDatabase extends _$AppDatabase {
     String id, {
     required int? reps,
     required int? holdSeconds,
-    required double weightKg,
+    required double? weightKg,
   }) async {
     await (update(setRecords)..where((s) => s.id.equals(id))).write(
       SetRecordsCompanion(

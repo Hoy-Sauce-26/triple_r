@@ -58,7 +58,7 @@ void main() {
   Future<void> settle() => container.read(activeSessionProvider.future);
 
   /// Logs [reps] for whatever step is current.
-  Future<void> logCurrent(int reps) async {
+  Future<void> logCurrent(int reps, {double? weightKg}) async {
     final step = session().currentStep!;
     final exercise = session().exerciseFor(step);
     // Timed exercises must go in the hold column or the CHECK constraint
@@ -69,13 +69,22 @@ void main() {
     await controller().logSet(
       reps: timed ? null : reps,
       holdSeconds: timed ? reps : null,
+      weightKg: weightKg,
     );
   }
 
   /// Works the whole session at [reps].
-  Future<void> completeWorkout(int reps) async {
+  ///
+  /// [weightOn] names a path whose sets carry [weightKg] — the case where the
+  /// user types a load into the logger rather than accepting a prompt.
+  Future<void> completeWorkout(
+    int reps, {
+    String? weightOn,
+    double? weightKg,
+  }) async {
     while (session().currentStep != null) {
-      await logCurrent(reps);
+      final onPath = session().currentStep!.pathId == weightOn;
+      await logCurrent(reps, weightKg: onPath ? weightKg : null);
     }
   }
 
@@ -490,6 +499,82 @@ void main() {
       expect(state.lastIncrementKg, isNotNull);
     });
 
+    test('the weight the user typed is what the prompt adds to', () async {
+      // The reported bug: the working load only ever moved when a prompt was
+      // accepted, so someone who simply typed 10 lb into the logger still had
+      // zero recorded against the exercise — and the prompt then offered the
+      // bare increment as a *total*, wiping the ten they had been lifting.
+      await db.saveProgressionConfig(
+        pathId: 'antirotation',
+        branchId: 'pallof',
+        exerciseId: 'pallof_press',
+      );
+      await settle();
+      await controller().start();
+      await completeWorkout(
+        12,
+        weightOn: 'antirotation',
+        weightKg: poundsToKg(10),
+      );
+
+      final outcomes = await controller().evaluateSession();
+      final core = outcomes.firstWhere((o) => o.pathId == 'antirotation');
+      final add = core.outcome as AddLoadOutcome;
+      expect(
+        kgToPounds(add.currentLoadKg),
+        closeTo(10, 1e-6),
+        reason: 'the log is the truth about what was lifted',
+      );
+      expect(kgToPounds(add.resultingLoadKg), closeTo(12.5, 1e-6));
+
+      await controller().applyOutcome(core);
+      final state = await db.exerciseState('pallof_press');
+      expect(kgToPounds(state!.workingLoadKg), closeTo(12.5, 1e-6));
+    });
+
+    test('a typed load is remembered even without a prompt', () async {
+      await db.saveProgressionConfig(
+        pathId: 'antirotation',
+        branchId: 'pallof',
+        exerciseId: 'pallof_press',
+      );
+      await settle();
+      await controller().start();
+      // Mid-range: no prompt at all, and the load must still stick.
+      await completeWorkout(
+        10,
+        weightOn: 'antirotation',
+        weightKg: poundsToKg(10),
+      );
+      await controller().evaluateSession();
+
+      final state = await db.exerciseState('pallof_press');
+      expect(kgToPounds(state!.workingLoadKg), closeTo(10, 1e-6));
+    });
+
+    test('the increment from settings is what a fresh exercise moves by',
+        () async {
+      await db.updateProfile(
+        UserProfilesCompanion(loadIncrementKg: Value(poundsToKg(10))),
+      );
+      await db.saveProgressionConfig(
+        pathId: 'hinge',
+        branchId: 'barbell',
+        exerciseId: null,
+      );
+      await db.saveExerciseState('barbell_romanian_deadlift', workingLoadKg: 60);
+      await settle();
+      await controller().start();
+      await completeWorkout(8);
+
+      final outcomes = await controller().evaluateSession();
+      final hinge = outcomes.firstWhere((o) => o.pathId == 'hinge');
+      expect(
+        kgToPounds((hinge.outcome as AddLoadOutcome).suggestedIncrementKg),
+        closeTo(10, 1e-6),
+      );
+    });
+
     test('a topped-out branch congratulates once and records it', () async {
       await db.saveProgressionConfig(
         pathId: 'squat',
@@ -564,7 +649,7 @@ void main() {
       await controller().logSet(reps: 5, holdSeconds: null);
 
       // Logging starts the 90s pair rest and moves to the paired exercise.
-      expect(notifications.current, startsWith('Resting · 1:30'));
+      expect(notifications.current, startsWith('Resting'));
       expect(
         notifications.current,
         contains('Next up: Assisted Squats'),
@@ -575,11 +660,23 @@ void main() {
         endsWith('0/90'),
         reason: 'the bar tracks the rest while the rest is what is running',
       );
+      // The seconds are not in the text — text only changes while the app is
+      // scheduled, and the shade used to freeze at whatever second Flutter
+      // was last awake for. The deadline goes to the platform instead, which
+      // counts it down whether or not any Dart is running.
+      expect(
+        notifications.countdowns.last,
+        clock.now().add(const Duration(seconds: 90)),
+      );
 
       clock.advance(const Duration(seconds: 30));
       ticker.tick();
-      expect(notifications.current, startsWith('Resting · 1:00'));
       expect(notifications.current, endsWith('30/90'));
+      expect(
+        notifications.countdowns.last,
+        clock.now().add(const Duration(seconds: 60)),
+        reason: 'the deadline is fixed, so it does not drift as time passes',
+      );
     });
 
     test('five ticks a second do not become five notifications', () async {

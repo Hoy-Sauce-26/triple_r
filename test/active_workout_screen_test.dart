@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -257,6 +258,129 @@ void main() {
       everyElement(closeTo(poundsToKg(10), 1e-9)),
       reason: 'both sets are logged at the weight, not just the typed one',
     );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a weight of zero is recorded as zero, not as nothing',
+      (tester) async {
+    // Zero and empty look identical in the box but are not the same claim:
+    // empty means "no weight recorded", zero means "I did this unloaded".
+    // Both used to land in the database as 0, so a set deliberately logged
+    // bodyweight had its field re-seeded from the working load on the very
+    // next set.
+    await db.saveProgressionConfig(
+      pathId: 'pullup',
+      branchId: 'weighted',
+      exerciseId: 'weighted_pullups',
+    );
+    await db.saveExerciseState('weighted_pullups', workingLoadKg: poundsToKg(25));
+    await pumpWorkout(tester);
+
+    await tester.enterText(find.byType(TextField).first, '8');
+    await tester.enterText(find.byType(TextField).at(1), '0');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log set'));
+    await tester.pumpAndSettle();
+
+    final sets = await db.setsForSession(
+      container.read(activeSessionProvider).value!.id,
+    );
+    expect(
+      sets.firstWhere((s) => s.pathId == 'pullup').weightKg,
+      0,
+      reason: 'a typed zero is a value, and it is stored as one',
+    );
+
+    await tester.tap(find.text('Skip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log set'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(TextField, '0'),
+      findsOneWidget,
+      reason: 'set 2 keeps the zero rather than reverting to the working load',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('an untouched weight field records nothing at all',
+      (tester) async {
+    await db.saveProgressionConfig(
+      pathId: 'pullup',
+      branchId: 'weighted',
+      exerciseId: 'weighted_pullups',
+    );
+    await pumpWorkout(tester);
+
+    await tester.enterText(find.byType(TextField).first, '8');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log set'));
+    await tester.pumpAndSettle();
+
+    final sets = await db.setsForSession(
+      container.read(activeSessionProvider).value!.id,
+    );
+    expect(
+      sets.firstWhere((s) => s.pathId == 'pullup').weightKg,
+      isNull,
+      reason: 'nothing entered is not the same claim as zero',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the set rows carry what the same set came to last time',
+      (tester) async {
+    // So the user can see last week without the entry box being locked down
+    // to it — the seed is one number they immediately overtype and lose.
+    //
+    // Pair rotation off, so completing the session below does not hand the
+    // new workout a different pair order and open on a different exercise.
+    await db.updateProfile(const UserProfilesCompanion(rotatePairOrder: Value(false)));
+    final previous = 'session-previous';
+    await db.startSession(
+      id: previous,
+      startedAt: DateTime(2026, 3, 1, 9),
+      rotationIndex: 0,
+      sessionOrdinal: 0,
+      pairRestSeconds: 90,
+      tripletRestSeconds: 60,
+      cursorJson: '{}',
+    );
+    for (final (index, reps) in [7, 6, 5].indexed) {
+      await db.logSet(
+        SetRecordsCompanion.insert(
+          id: '$previous-pullup-${index + 1}',
+          sessionId: previous,
+          pathId: 'pullup',
+          exerciseId: 'scapular_pulls',
+          setIndex: index + 1,
+          repsCompleted: Value(reps),
+          recordedAt: DateTime(2026, 3, 1, 9, 10 + index),
+        ),
+      );
+    }
+    await db.closeSession(
+      previous,
+      status: 'completed',
+      endedAt: DateTime(2026, 3, 1, 10),
+    );
+
+    await pumpWorkout(tester);
+
+    expect(find.text('Last time'), findsOneWidget);
+    for (final reps in ['7', '6', '5']) {
+      expect(
+        find.text(reps),
+        findsWidgets,
+        reason: 'each of last session\'s three sets is shown against its own',
+      );
+    }
 
     await disposeApp(tester);
   });

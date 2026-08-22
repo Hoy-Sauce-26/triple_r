@@ -33,13 +33,37 @@ double toDisplayWeight(double kg, UnitSystem units) =>
 double fromDisplayWeight(double value, UnitSystem units) =>
     units == UnitSystem.metric ? value : poundsToKg(value);
 
-/// What the "add weight?" prompt offers when an exercise has no remembered
-/// increment yet — 2.5 lb, or 1 kg for metric users.
+/// What the "add weight?" prompt offers when neither the exercise nor the
+/// user has said otherwise — 2.5 lb, or 1 kg for metric users.
 ///
-/// Deliberately a seed and not a setting: the user corrects it once at the
-/// prompt and it is remembered per exercise from then on.
+/// The smallest step most people can actually make: a pair of 1.25 lb plates,
+/// or a single kilo.
 double seedIncrementKg(UnitSystem units) =>
     units == UnitSystem.metric ? 1.0 : poundsToKg(2.5);
+
+/// The step the "add weight?" prompt offers for an exercise with no remembered
+/// increment of its own.
+///
+/// Three tiers, narrowest first: what this exercise last moved by, the step
+/// the user configured in Settings, and finally [seedIncrementKg]. The
+/// per-exercise memory stays on top because a weighted pull-up and a barbell
+/// deadlift do not climb at the same rate, and the setting exists for the
+/// users whose whole plate set makes the default step wrong everywhere.
+double incrementKgFor({
+  required UnitSystem units,
+  double? lastIncrementKg,
+  double? configuredIncrementKg,
+}) =>
+    lastIncrementKg ?? configuredIncrementKg ?? seedIncrementKg(units);
+
+/// The steps offered in Settings, in the user's own unit.
+///
+/// Fixed choices rather than a free field: these are the plate pairs that
+/// exist, and a 3.7 lb step is not a thing anyone can load.
+List<double> incrementChoices(UnitSystem units) =>
+    units == UnitSystem.metric
+        ? const [0.5, 1.0, 1.25, 2.0, 2.5, 5.0]
+        : const [1.0, 2.5, 5.0, 10.0];
 
 /// Applies [incrementKg] to [currentKg], doing the addition in the user's
 /// display unit.

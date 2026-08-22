@@ -111,7 +111,8 @@ class ExerciseContext {
 
   final double workingLoadKg;
 
-  /// What the user last chose to add here. Null seeds the prompt.
+  /// What the user last chose to add here. Null falls back to the configured
+  /// step, then to [seedIncrementKg] — see [incrementKgFor].
   final double? lastIncrementKg;
 
   final int consecutiveFailures;
@@ -127,10 +128,13 @@ const failuresBeforeRegression = 2;
 ///
 /// [setValues] holds reps or seconds, one per completed set, exactly as
 /// recorded — nothing is clamped to the target range.
+/// [configuredIncrementKg] is the user's Settings step, used when this
+/// exercise has no remembered increment of its own.
 Evaluation evaluate(
   ExerciseContext context,
   List<int> setValues, {
   required UnitSystem units,
+  double? configuredIncrementKg,
 }) {
   final scheme = schemeFor(context.exercise, context.slot);
 
@@ -145,16 +149,28 @@ Evaluation evaluate(
     );
   }
 
-  if (scheme.isMaxedBy(setValues)) return _advance(context, units);
-  if (scheme.isFailedBy(setValues)) return _fail(context, units);
+  if (scheme.isMaxedBy(setValues)) {
+    return _advance(context, units, configuredIncrementKg);
+  }
+  if (scheme.isFailedBy(setValues)) {
+    return _fail(context, units, configuredIncrementKg);
+  }
 
   // In range: not a failure, so the counter resets.
   return const Evaluation(outcome: HoldOutcome(), consecutiveFailures: 0);
 }
 
-Evaluation _advance(ExerciseContext context, UnitSystem units) {
+Evaluation _advance(
+  ExerciseContext context,
+  UnitSystem units,
+  double? configuredIncrementKg,
+) {
   if (context.exercise.mode == ProgressionMode.load) {
-    final increment = context.lastIncrementKg ?? seedIncrementKg(units);
+    final increment = incrementKgFor(
+      units: units,
+      lastIncrementKg: context.lastIncrementKg,
+      configuredIncrementKg: configuredIncrementKg,
+    );
     return Evaluation(
       outcome: AddLoadOutcome(
         currentLoadKg: context.workingLoadKg,
@@ -182,7 +198,11 @@ Evaluation _advance(ExerciseContext context, UnitSystem units) {
   );
 }
 
-Evaluation _fail(ExerciseContext context, UnitSystem units) {
+Evaluation _fail(
+  ExerciseContext context,
+  UnitSystem units,
+  double? configuredIncrementKg,
+) {
   final failures = context.consecutiveFailures + 1;
   if (failures < failuresBeforeRegression) {
     return Evaluation(
@@ -192,7 +212,11 @@ Evaluation _fail(ExerciseContext context, UnitSystem units) {
   }
 
   if (context.exercise.mode == ProgressionMode.load) {
-    final increment = context.lastIncrementKg ?? seedIncrementKg(units);
+    final increment = incrementKgFor(
+      units: units,
+      lastIncrementKg: context.lastIncrementKg,
+      configuredIncrementKg: configuredIncrementKg,
+    );
     return Evaluation(
       outcome: ReduceLoadOutcome(
         currentLoadKg: context.workingLoadKg,

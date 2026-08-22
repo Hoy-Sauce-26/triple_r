@@ -11,7 +11,7 @@ the SQLite file on the device is the whole system of record.
 | **Package** | `com.nttech.TripleR` (debug builds install alongside as `com.nttech.TripleR.dev`, with their own database) |
 | **Platforms** | Android, iOS |
 | **State** | `flutter_riverpod` 3 |
-| **Persistence** | `drift` (SQLite), schema v6 |
+| **Persistence** | `drift` (SQLite), schema v7 |
 | **Charts** | `fl_chart` |
 | **Platform edges** | `audioplayers`, `wakelock_plus`, `flutter_local_notifications`, `share_plus`, `file_picker`, `path_provider` |
 
@@ -142,6 +142,21 @@ mid-session would swap an exercise out from under someone two sets in — and
 Set ids are deterministic (`{sessionId}-{pathId}-{setIndex}`), so re-logging
 after an edit overwrites rather than duplicating.
 
+### Logging a set
+
+Both entry fields are seeded from history, best source first — this session,
+then last session, then the scheme floor. A seed is only ever a guess, though,
+and the user overtypes it immediately, which destroys the one piece of context
+they were comparing against. So the set list carries a second column: what the
+*same set index* came to last session, all three rows of it, read from the
+query the seed itself comes from so the two cannot disagree.
+
+Last time sits to the left of this session, and both columns are fixed-width
+(`_SetRow.columnWidth`) so they share an edge with their headings. The order
+is the direction the comparison runs — what you did, then what you are doing.
+Reading the number off the screen is what makes it safe to leave the entry box
+loose rather than pinning it to last week's target.
+
 ## Timers
 
 **Deadline-based, never decrement-based.** A running countdown stores the
@@ -155,6 +170,14 @@ deadline is simply correct whenever it is next observed.
 seconds freeze. `Countdown.tick()` exists solely to return a distinct object
 holding identical values. Unit tests read `remaining` directly and cannot see
 this; only a widget test catches it.
+
+A rest ends with five gentle blips, one a second, and then the chime. The
+blips are `Alerts.restCountdown` rather than a quieter `restComplete`: the
+countdown is a warning and the end of the rest is an instruction, and someone
+with the phone in a pocket has to be able to tell them apart without looking.
+They are keyed to the *ceiling* of the remaining time — the second the screen
+is showing — so a phone that slept through part of the lead-in blips for the
+second it comes back on rather than replaying the ones it missed.
 
 Three separate timers, deliberately: `restTimerProvider` (between sets),
 `holdTimerProvider` (warmup holds), and `sessionClockProvider` (elapsed
@@ -171,7 +194,7 @@ overridden** so a test can never open the real on-device file.
 
 | Table | Holds |
 | --- | --- |
-| `user_profiles` | Single row. Units, rest defaults, rotation toggle, hand-picked workout |
+| `user_profiles` | Single row. Units, rest defaults, load increment, rotation toggle, hand-picked workout |
 | `progression_configs` | One row per path: selected branch and exercise |
 | `exercise_states` | Working load, last increment, consecutive failures, mastery |
 | `workout_sessions` | Header, status, rotation index, session ordinal, resume cursor |
@@ -181,6 +204,36 @@ overridden** so a test can never open the real on-device file.
 Weight is **per set**, not per exercise — each row carries its own
 `weight_kg`, and both the logger and the history screen can correct it.
 
+`set_records.weight_kg` is **nullable, and null is not zero.** Null means no
+weight was entered; zero means the user said this set carried nothing extra.
+Collapsing the two was a real bug: a set logged at 0 lb came back
+indistinguishable from an untouched field, so the logger re-seeded the next set
+from the working load and overruled the user every set. The logger's helper
+text spells the difference out, because an empty box and a box holding `0` look
+much more alike than they mean.
+
+The distinction only runs forward. Everything written before v7 went into a
+NOT NULL DEFAULT 0 column that no screen could type a zero into, so a zero in
+an old row means "nobody filled this in" — which is every set of every
+bodyweight exercise ever logged. The v7 migration nulls them out for exactly
+that reason; carrying them across as deliberate zeros put "9 @ 0 lb" on every
+push-up in the history.
+
+Two rules govern showing a load, and both are needed:
+
+- **The exercise must be `loadable`.** A row can carry a number the exercise
+  does not take, and "@ 0 lb" on a push-up is nonsense the user cannot even
+  correct, since the edit dialog hides its weight field on the same flag.
+- **The weight must be non-null** — but zero still prints. On a weighted dip,
+  zero is a choice, and hiding it makes the set look unlogged.
+
+`exercise_states.working_load_kg` is the app's **plan** for next session;
+`set_records.weight_kg` is the **record** of what was lifted. When they
+disagree at the end of a session the log wins, and the plan is written back to
+match — otherwise someone who types their weight into the logger rather than
+accepting an add-load prompt never accumulates a working load at all, and the
+next prompt offers them the bare increment as a *total*.
+
 | Version | Change |
 | --- | --- |
 | 2 | Everything past the profile table |
@@ -188,11 +241,51 @@ Weight is **per set**, not per exercise — each row carries its own
 | 4 | `workout_sessions.session_ordinal` |
 | 5 | Height dropped (table rebuild — SQLite cannot drop a column in place) |
 | 6 | `user_profiles.planned_rotation_index` |
+| 7 | `user_profiles.load_increment_kg`; `set_records.weight_kg` made nullable and its pre-existing zeros nulled (table rebuild — the first migration that *widens* a column, and the first that reinterprets data rather than moving it) |
 
 Every schema change needs a `schemaVersion` bump **and** a migration step,
 even pre-release. Exported backups carry their version and are re-imported
 through these same migrations, so a skipped step breaks restore on someone
 else's phone rather than failing loudly here.
+
+### How much weight a progression adds
+
+Three tiers, narrowest first — `incrementKgFor` in `lib/domain/units.dart`:
+
+1. `exercise_states.last_increment_kg`, what *this exercise* last moved by.
+2. `user_profiles.load_increment_kg`, the step chosen in Settings.
+3. `seedIncrementKg`, 2.5 lb or 1 kg.
+
+`docs/PLAN.md` §2.2.1 says the increment is deliberately not a setting, on the
+reasoning that the user corrects it once at the prompt and it is remembered per
+exercise from then on. That holds for someone whose gym has every plate; it
+does not hold for someone whose smallest pair is 5 lb, who then has to correct
+the same prompt on nine paths before the app stops suggesting a step they
+cannot load. So there is a setting now, offered as fixed choices rather than a
+free field — these are plate pairs, and a 3.7 lb step is not a thing anyone can
+put on a bar.
+
+The per-exercise memory still wins over it, because a weighted pull-up and a
+barbell deadlift do not climb at the same rate. The Settings row says so, since
+changing the setting and watching one exercise ignore it otherwise looks
+broken.
+
+## Charts
+
+`TrendChart` is shared by body weight and exercise progress. Two things it
+does deliberately:
+
+- **The y-range does not start at zero.** An 82 kg body weight plotted from
+  zero is a flat line at the top of the frame, which hides exactly the
+  variation the chart was opened to see.
+- **The axis is labelled, and the label lives on the axis.** Four interval
+  gridlines carry values, and the units are named by `axisLabel`, rendered
+  rotated against the axis rather than as a caption over the card — as a
+  caption it read as a heading for the whole card, and the numbers down the
+  side stayed unexplained. The padded extremes of both axes are skipped
+  (`minIncluded: false`), because they are padding rather than data and
+  labelling them puts a number hard against the frame a hair from the first
+  real gridline.
 
 ## Services
 
@@ -203,10 +296,20 @@ testable without the plugin: `Clock`/`Ticker`, `Alerts` (audio), `Haptics`,
 The ongoing workout notification is driven from `ActiveSessionController`,
 not from a screen, so it stays correct when no screen is showing — which is
 the point, since the phone is in a pocket between sets. While a rest runs the
-notification is *about the rest*: countdown in the title, "Next up:" for the
-coming exercise, and the bar tracking the rest. Updates are throttled by
-comparing the fully-composed content, collapsing the 5-per-second ticks into
-one post per whole second.
+notification is *about the rest*: "Next up:" for the coming exercise, the bar
+tracking the rest, and the remaining time handed to Android as a
+**chronometer** rather than written into the text.
+
+That last part is not cosmetic. Text only changes when Dart runs, and Dart
+stops running when the phone is in a pocket — so the shade froze at whatever
+second Flutter was last scheduled on, and offered thirty seconds of rest to
+someone who had three. `usesChronometer` + `chronometerCountDown` hand the
+platform the deadline and let it count down on its own clock, which is correct
+whether or not the app is awake. It is the same reasoning as the timers
+themselves: store the instant, derive the rest.
+
+Updates are throttled by comparing the fully-composed content, collapsing the
+5-per-second ticks into one post per whole second.
 
 ## Testing
 
@@ -217,6 +320,14 @@ flutter test
 Database tests run on the host VM against real SQLite via
 `AppDatabase.memory()` — no emulator, milliseconds per test. Domain and tree
 tests need no widget tree at all.
+
+`test/migration_test.dart` is the exception: it hand-writes an old schema with
+`NativeDatabase.memory(setup:)` and sets `PRAGMA user_version` before drift
+opens the file, so the real `onUpgrade` runs against it. Worth the ceremony
+from v7 onward, because that is the first migration that *rebuilds* a table
+rather than adding a column — and a rebuild that dropped rows, lost the
+indexes that went with the old table, or quietly forgot a `CHECK` would
+surface on someone else's phone restoring a backup rather than here.
 
 > **Widget tests must dispose the tree inside the test body.** Riverpod tears
 > down `profileProvider` when the ProviderScope unmounts, which cancels drift's
@@ -264,9 +375,13 @@ tests need no widget tree at all.
 ## Known gaps
 
 - **The workout notification has never been verified on a device.** The
-  analyzer and widget tests cover the content and throttling; the permission
-  prompt, channel setup and `@mipmap/ic_launcher` reference have not been
-  exercised.
+  analyzer and widget tests cover the content, the throttling and the deadline
+  handed to the chronometer; the permission prompt, channel setup,
+  `@mipmap/ic_launcher` reference — and whether the shade actually *renders*
+  the countdown chronometer the way the docs say — have not been exercised.
+- **iOS gets no rest chronometer.** `usesChronometer` is an Android notion, so
+  an iOS user's shade shows the exercise and nothing counting down. The
+  in-app timer and the audio cues are unaffected.
 - **Release builds are signed with the debug key** (`android/app/build.gradle.kts`).
   A real signing config is required before distribution.
 - **Editing a past session does not re-run progression.** Those rules fired at

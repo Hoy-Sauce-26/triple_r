@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:triple_r/data/database.dart';
 import 'package:triple_r/domain/backup.dart';
+import 'package:triple_r/domain/units.dart';
 import 'package:triple_r/providers.dart';
 import 'package:triple_r/screens/settings_screen.dart';
 import 'package:triple_r/services/backup_files.dart';
@@ -94,6 +95,62 @@ void main() {
         find.widgetWithIcon(IconButton, Icons.remove_circle_outline).first,
       );
       expect(minus.onPressed, isNull, reason: '30s is the floor');
+      await disposeApp(tester);
+    });
+  });
+
+  group('progression increment', () {
+    testWidgets('defaults to the unit seed without storing one',
+        (tester) async {
+      await pump(tester);
+
+      expect(find.text('Weight added when you progress'), findsOneWidget);
+      expect(
+        find.text('2.5 lb'),
+        findsWidgets,
+        reason: 'imperial users start at the smallest real plate pair',
+      );
+      expect(
+        (await db.profile).loadIncrementKg,
+        isNull,
+        reason: 'showing a default is not the same as choosing one',
+      );
+      await disposeApp(tester);
+    });
+
+    testWidgets('picking a step stores it in kilograms', (tester) async {
+      await pump(tester);
+
+      await tester.tap(find.byType(DropdownButton<double>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('10 lb').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        kgToPounds((await db.profile).loadIncrementKg!),
+        closeTo(10, 1e-9),
+        reason: 'stored in SI like every other weight, displayed in lb',
+      );
+      await disposeApp(tester);
+    });
+
+    testWidgets('offers metric steps to metric users', (tester) async {
+      await db.updateProfile(
+        const UserProfilesCompanion(unitSystem: Value('metric')),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byType(DropdownButton<double>));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('1.25 kg'),
+        findsOneWidget,
+        reason: 'a 1.25 lb step is not a thing a metric gym can load',
+      );
+      await tester.tap(find.text('1.25 kg').last);
+      await tester.pumpAndSettle();
+
+      expect((await db.profile).loadIncrementKg, closeTo(1.25, 1e-9));
       await disposeApp(tester);
     });
   });

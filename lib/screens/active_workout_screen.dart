@@ -276,7 +276,10 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
   /// 3. What was actually on the bar last session, for anyone logging weight
   ///    without using load mode at all.
   ///
-  /// Null means leave the field empty rather than assert a zero.
+  /// Null means leave the field empty rather than assert a zero — and a
+  /// *recorded* zero is not null: someone who logged set 1 at 0 lb is telling
+  /// the app the exercise is unloaded today, and re-seeding set 2 from the
+  /// working load would overrule them every set.
   double? _seedWeightKg(
     List<SetRecord> thisSession,
     List<SetRecord>? lastSession,
@@ -340,9 +343,11 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
     if (widget.exercise.loadable && !fields.weightTouched) {
       final state = ref.watch(exerciseStateProvider(widget.exercise.id)).value;
       final kg = _seedWeightKg(thisSession, previous, state);
-      final text =
-          kg == null || kg == 0 ? '' : formatWeight(kg, units, withSuffix: false);
-      if (text.isNotEmpty && text != fields.seededWeight) {
+      // A seed of zero fills the field with "0" rather than leaving it blank:
+      // the two now mean different things when the set is logged, and the
+      // seed knows which one it is.
+      final text = kg == null ? null : formatWeight(kg, units, withSuffix: false);
+      if (text != null && text != fields.seededWeight) {
         fields.seededWeight = text;
         _afterFrame(() {
           if (fields.weightTouched) return;
@@ -384,6 +389,10 @@ class _SetLoggerState extends ConsumerState<_SetLogger> {
             onChanged: (_) => fields.weightTouched = true,
             decoration: InputDecoration(
               labelText: 'Added weight (${units.weightSuffix})',
+              // Spelled out because the two look identical in an empty box:
+              // a blank field records nothing, a typed 0 records a set done
+              // with no added weight, and progression reads them differently.
+              helperText: 'Empty records nothing; 0 is no added weight.',
               border: const OutlineInputBorder(),
               isDense: true,
             ),
@@ -490,8 +499,8 @@ class _PreviousSetCard extends ConsumerWidget {
     final value = record.holdSeconds != null
         ? '${record.holdSeconds}s'
         : '${record.repsCompleted}';
-    final weight = exercise.loadable && record.weightKg > 0
-        ? ' · ${formatWeight(record.weightKg, units)}'
+    final weight = exercise.loadable && record.weightKg != null
+        ? ' · ${formatWeight(record.weightKg!, units)}'
         : '';
 
     return Card.outlined(
@@ -514,13 +523,19 @@ class _PreviousSetCard extends ConsumerWidget {
   }
 }
 
-/// Every set of this exercise, logged or not.
+/// Every set of this exercise, logged or not, against what it was last time.
 ///
 /// All three rows are present from the moment the exercise opens. Rendering
 /// only the logged ones meant the list grew a row at the instant a set was
 /// recorded and then the whole screen changed exercise a frame later, which
 /// read as a flicker. A fixed list has nothing to shift: logging fills a
 /// value in place, and only then does the step move on.
+///
+/// Each row also carries last session's number for that same set. The field
+/// above is seeded from history, but a seed is a single guess that the user
+/// then overtypes and loses sight of — showing all three of last week's sets
+/// alongside this week's means "am I actually beating last time?" is answered
+/// on the screen rather than by locking the entry box down to it.
 class _LoggedSets extends ConsumerWidget {
   const _LoggedSets({
     required this.pathId,
@@ -535,20 +550,58 @@ class _LoggedSets extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final units = ref.watch(unitSystemProvider);
     final all = ref.watch(currentSessionSetsProvider).value ?? const [];
     final byIndex = {
       for (final record in all)
         if (record.pathId == pathId) record.setIndex: record,
     };
 
+    // The same query the field seeds itself from, so the two can never
+    // disagree about what "last time" was.
+    final previous = ref.watch(previousSetsProvider(exercise.id)).value;
+    final lastByIndex = {
+      for (final record in previous ?? const <SetRecord>[])
+        record.setIndex: record,
+    };
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('This session', style: theme.textTheme.labelLarge),
+        // Two column headings rather than a section title and a note. Last
+        // time sits *inside* this session's, so the eye lands on last week's
+        // number first and this week's second — the order the comparison is
+        // actually made in.
+        Row(
+          children: [
+            const Spacer(),
+            if (lastByIndex.isNotEmpty)
+              SizedBox(
+                width: _SetRow.columnWidth,
+                child: Text(
+                  'Last time',
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            SizedBox(
+              width: _SetRow.columnWidth,
+              child: Text(
+                'This session',
+                textAlign: TextAlign.end,
+                style: theme.textTheme.labelSmall,
+              ),
+            ),
+          ],
+        ),
         for (var index = 1; index <= setsPerExercise; index++)
           _SetRow(
             setIndex: index,
             record: byIndex[index],
+            previous: lastByIndex[index],
+            loadable: exercise.loadable,
+            units: units,
             isCurrent: index == currentSetIndex,
             onEdit: byIndex[index] == null
                 ? null
@@ -598,28 +651,41 @@ Future<void> editLoggedSet(
       );
 }
 
-/// One row: a logged value, or a placeholder holding its place.
+/// One row: a logged value, or a placeholder holding its place, next to
+/// whatever the same set came to last session.
 class _SetRow extends StatelessWidget {
   const _SetRow({
     required this.setIndex,
     required this.record,
+    required this.previous,
+    required this.loadable,
+    required this.units,
     required this.isCurrent,
     required this.onEdit,
   });
 
   final int setIndex;
   final SetRecord? record;
+
+  /// The same set index from the last session that included this exercise, or
+  /// null if there was no such set — a first session, or one cut short.
+  final SetRecord? previous;
+
+  final bool loadable;
+  final UnitSystem units;
   final bool isCurrent;
   final VoidCallback? onEdit;
+
+  /// Fixed so the two columns and their headings share one edge. Wide enough
+  /// for the longest thing a row holds — a hold plus a load, "45s @ 25 lb".
+  static const columnWidth = 92.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final done = record != null;
     final value = done
-        ? (record!.holdSeconds != null
-            ? '${record!.holdSeconds}s'
-            : '${record!.repsCompleted}')
+        ? _describe(record!)
         // An em dash rather than a zero: nothing has been recorded here yet,
         // and a zero is a real thing a user can log.
         : '—';
@@ -634,14 +700,51 @@ class _SetRow extends StatelessWidget {
                 ?.copyWith(color: theme.colorScheme.primary)
             : null,
       ),
-      trailing: Text(
-        value,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: done ? null : theme.colorScheme.onSurfaceVariant,
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Last time first, then this session, so the row reads in the
+          // direction the comparison runs — what you did, then what you are
+          // doing. Reserved whether or not there is a number to put in it, so
+          // the three rows line up rather than stepping in and out as sets
+          // that existed last week and sets that did not alternate down the
+          // list.
+          SizedBox(
+            width: columnWidth,
+            child: Text(
+              previous == null ? '' : _describe(previous!),
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodyMedium?.tabular
+                  .copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+          SizedBox(
+            width: columnWidth,
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.titleMedium?.tabular.copyWith(
+                color: done ? null : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       ),
       onTap: onEdit,
     );
+  }
+
+  /// Reps or seconds, with the load when the exercise carries one.
+  String _describe(SetRecord set) {
+    final value =
+        set.holdSeconds != null ? '${set.holdSeconds}s' : '${set.repsCompleted}';
+    final weight = set.weightKg;
+    // Null is dropped, zero is not. On an exercise that takes a load, zero is
+    // a real answer — it is how someone records dropping back to bare
+    // bodyweight — and hiding it makes that set look like the weight was
+    // never entered.
+    if (!loadable || weight == null) return value;
+    return '$value @ ${formatWeight(weight, units)}';
   }
 }
 
@@ -771,7 +874,9 @@ class _LogSetButton extends ConsumerWidget {
     bool timed,
     UnitSystem units,
   ) async {
-    final weight = double.tryParse(fields.weight.text) ?? 0;
+    // Empty is not zero. `?? 0` here was why a set logged at 0 lb and a set
+    // logged with the field untouched came out of the database identical.
+    final weight = double.tryParse(fields.weight.text.trim());
     // Confirmed by touch: the user is often looking at the bar, not the
     // phone, and needs to know the tap registered without checking.
     //
@@ -787,7 +892,7 @@ class _LogSetButton extends ConsumerWidget {
     await ref.read(activeSessionProvider.notifier).logSet(
           reps: timed ? null : entered,
           holdSeconds: timed ? entered : null,
-          weightKg: fromDisplayWeight(weight, units),
+          weightKg: weight == null ? null : fromDisplayWeight(weight, units),
         );
   }
 }

@@ -175,6 +175,71 @@ void main() {
           reason: 'the backup carries its own settings');
     });
 
+    test('an unweighted set stays unweighted, and a zero stays a zero',
+        () async {
+      // The two are one byte apart in the JSON and mean different things to
+      // the progression rules. Collapsing them on restore would hand someone
+      // else's phone a set they never logged.
+      await seed();
+      await db.into(db.setRecords).insert(
+            SetRecordsCompanion.insert(
+              id: 'set-3',
+              sessionId: 'session-1',
+              pathId: 'pullup',
+              exerciseId: 'weighted_pullups',
+              setIndex: 1,
+              repsCompleted: const Value(6),
+              recordedAt: DateTime(2026, 3, 1, 9, 50),
+            ),
+          );
+
+      final json = await exportBackup(db);
+      await restoreBackup(db, json);
+
+      final rows = await db.select(db.setRecords).get();
+      expect(
+        rows.firstWhere((r) => r.id == 'set-3').weightKg,
+        isNull,
+        reason: 'nothing entered restores as nothing entered',
+      );
+      expect(
+        rows.firstWhere((r) => r.id == 'set-1').weightKg,
+        0,
+        reason: 'a deliberate zero restores as a zero',
+      );
+    });
+
+    test('the configured load increment survives a round trip', () async {
+      await seed();
+      await db.updateProfile(
+        const UserProfilesCompanion(loadIncrementKg: Value(2.5)),
+      );
+
+      final json = await exportBackup(db);
+      await restoreBackup(db, json);
+      expect((await db.profile).loadIncrementKg, 2.5);
+    });
+
+    test('a backup taken before the increment existed restores without one',
+        () async {
+      await seed();
+      final json = await exportBackup(db);
+      final stripped = jsonEncode(
+        (jsonDecode(json) as Map<String, dynamic>)
+          ..update(
+            'profile',
+            (p) => (p as Map<String, dynamic>)..remove('loadIncrementKg'),
+          ),
+      );
+
+      await restoreBackup(db, stripped);
+      expect(
+        (await db.profile).loadIncrementKg,
+        isNull,
+        reason: 'absent and null both mean "no preference"',
+      );
+    });
+
     test('a weight written as a whole number survives', () async {
       // JSON encodes 80.0 as `80`, which decodes as int and would crash a
       // cast to double.

@@ -69,6 +69,17 @@ class $UserProfilesTable extends UserProfiles
         requiredDuringInsert: false,
         defaultValue: const Constant(60),
       );
+  static const VerificationMeta _loadIncrementKgMeta = const VerificationMeta(
+    'loadIncrementKg',
+  );
+  @override
+  late final GeneratedColumn<double> loadIncrementKg = GeneratedColumn<double>(
+    'load_increment_kg',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _rotatePairOrderMeta = const VerificationMeta(
     'rotatePairOrder',
   );
@@ -91,6 +102,7 @@ class $UserProfilesTable extends UserProfiles
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
+    loadIncrementKg,
     rotatePairOrder,
   ];
   @override
@@ -141,6 +153,15 @@ class $UserProfilesTable extends UserProfiles
         ),
       );
     }
+    if (data.containsKey('load_increment_kg')) {
+      context.handle(
+        _loadIncrementKgMeta,
+        loadIncrementKg.isAcceptableOrUnknown(
+          data['load_increment_kg']!,
+          _loadIncrementKgMeta,
+        ),
+      );
+    }
     if (data.containsKey('rotate_pair_order')) {
       context.handle(
         _rotatePairOrderMeta,
@@ -179,6 +200,10 @@ class $UserProfilesTable extends UserProfiles
         DriftSqlType.int,
         data['${effectivePrefix}default_triplet_rest_seconds'],
       )!,
+      loadIncrementKg: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}load_increment_kg'],
+      ),
       rotatePairOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}rotate_pair_order'],
@@ -210,6 +235,15 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
   final int defaultPairRestSeconds;
   final int defaultTripletRestSeconds;
 
+  /// The load step the "add weight?" prompt offers for an exercise that has
+  /// no remembered increment of its own.
+  ///
+  /// Null means "whatever suits the unit system" — 2.5 lb, or 1 kg for metric
+  /// users. Kept nullable rather than defaulted so switching units still gets
+  /// a sensible step for anyone who has never opened this setting, and so the
+  /// stored number is only ever one the user actually chose.
+  final double? loadIncrementKg;
+
   /// Whether to rotate which pair comes first each session. Not part of the
   /// Recommended Routine — see `docs/PLAN.md` §5.1.
   final bool rotatePairOrder;
@@ -219,6 +253,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     required this.unitSystem,
     required this.defaultPairRestSeconds,
     required this.defaultTripletRestSeconds,
+    this.loadIncrementKg,
     required this.rotatePairOrder,
   });
   @override
@@ -233,6 +268,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     map['default_triplet_rest_seconds'] = Variable<int>(
       defaultTripletRestSeconds,
     );
+    if (!nullToAbsent || loadIncrementKg != null) {
+      map['load_increment_kg'] = Variable<double>(loadIncrementKg);
+    }
     map['rotate_pair_order'] = Variable<bool>(rotatePairOrder);
     return map;
   }
@@ -246,6 +284,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       unitSystem: Value(unitSystem),
       defaultPairRestSeconds: Value(defaultPairRestSeconds),
       defaultTripletRestSeconds: Value(defaultTripletRestSeconds),
+      loadIncrementKg: loadIncrementKg == null && nullToAbsent
+          ? const Value.absent()
+          : Value(loadIncrementKg),
       rotatePairOrder: Value(rotatePairOrder),
     );
   }
@@ -267,6 +308,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       defaultTripletRestSeconds: serializer.fromJson<int>(
         json['defaultTripletRestSeconds'],
       ),
+      loadIncrementKg: serializer.fromJson<double?>(json['loadIncrementKg']),
       rotatePairOrder: serializer.fromJson<bool>(json['rotatePairOrder']),
     );
   }
@@ -281,6 +323,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       'defaultTripletRestSeconds': serializer.toJson<int>(
         defaultTripletRestSeconds,
       ),
+      'loadIncrementKg': serializer.toJson<double?>(loadIncrementKg),
       'rotatePairOrder': serializer.toJson<bool>(rotatePairOrder),
     };
   }
@@ -291,6 +334,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     String? unitSystem,
     int? defaultPairRestSeconds,
     int? defaultTripletRestSeconds,
+    Value<double?> loadIncrementKg = const Value.absent(),
     bool? rotatePairOrder,
   }) => UserProfile(
     id: id ?? this.id,
@@ -302,6 +346,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
         defaultPairRestSeconds ?? this.defaultPairRestSeconds,
     defaultTripletRestSeconds:
         defaultTripletRestSeconds ?? this.defaultTripletRestSeconds,
+    loadIncrementKg: loadIncrementKg.present
+        ? loadIncrementKg.value
+        : this.loadIncrementKg,
     rotatePairOrder: rotatePairOrder ?? this.rotatePairOrder,
   );
   UserProfile copyWithCompanion(UserProfilesCompanion data) {
@@ -319,6 +366,9 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
       defaultTripletRestSeconds: data.defaultTripletRestSeconds.present
           ? data.defaultTripletRestSeconds.value
           : this.defaultTripletRestSeconds,
+      loadIncrementKg: data.loadIncrementKg.present
+          ? data.loadIncrementKg.value
+          : this.loadIncrementKg,
       rotatePairOrder: data.rotatePairOrder.present
           ? data.rotatePairOrder.value
           : this.rotatePairOrder,
@@ -333,6 +383,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
+          ..write('loadIncrementKg: $loadIncrementKg, ')
           ..write('rotatePairOrder: $rotatePairOrder')
           ..write(')'))
         .toString();
@@ -345,6 +396,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
     unitSystem,
     defaultPairRestSeconds,
     defaultTripletRestSeconds,
+    loadIncrementKg,
     rotatePairOrder,
   );
   @override
@@ -356,6 +408,7 @@ class UserProfile extends DataClass implements Insertable<UserProfile> {
           other.unitSystem == this.unitSystem &&
           other.defaultPairRestSeconds == this.defaultPairRestSeconds &&
           other.defaultTripletRestSeconds == this.defaultTripletRestSeconds &&
+          other.loadIncrementKg == this.loadIncrementKg &&
           other.rotatePairOrder == this.rotatePairOrder);
 }
 
@@ -365,6 +418,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
   final Value<String> unitSystem;
   final Value<int> defaultPairRestSeconds;
   final Value<int> defaultTripletRestSeconds;
+  final Value<double?> loadIncrementKg;
   final Value<bool> rotatePairOrder;
   const UserProfilesCompanion({
     this.id = const Value.absent(),
@@ -372,6 +426,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
+    this.loadIncrementKg = const Value.absent(),
     this.rotatePairOrder = const Value.absent(),
   });
   UserProfilesCompanion.insert({
@@ -380,6 +435,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     this.unitSystem = const Value.absent(),
     this.defaultPairRestSeconds = const Value.absent(),
     this.defaultTripletRestSeconds = const Value.absent(),
+    this.loadIncrementKg = const Value.absent(),
     this.rotatePairOrder = const Value.absent(),
   });
   static Insertable<UserProfile> custom({
@@ -388,6 +444,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     Expression<String>? unitSystem,
     Expression<int>? defaultPairRestSeconds,
     Expression<int>? defaultTripletRestSeconds,
+    Expression<double>? loadIncrementKg,
     Expression<bool>? rotatePairOrder,
   }) {
     return RawValuesInsertable({
@@ -399,6 +456,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
         'default_pair_rest_seconds': defaultPairRestSeconds,
       if (defaultTripletRestSeconds != null)
         'default_triplet_rest_seconds': defaultTripletRestSeconds,
+      if (loadIncrementKg != null) 'load_increment_kg': loadIncrementKg,
       if (rotatePairOrder != null) 'rotate_pair_order': rotatePairOrder,
     });
   }
@@ -409,6 +467,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
     Value<String>? unitSystem,
     Value<int>? defaultPairRestSeconds,
     Value<int>? defaultTripletRestSeconds,
+    Value<double?>? loadIncrementKg,
     Value<bool>? rotatePairOrder,
   }) {
     return UserProfilesCompanion(
@@ -419,6 +478,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
           defaultPairRestSeconds ?? this.defaultPairRestSeconds,
       defaultTripletRestSeconds:
           defaultTripletRestSeconds ?? this.defaultTripletRestSeconds,
+      loadIncrementKg: loadIncrementKg ?? this.loadIncrementKg,
       rotatePairOrder: rotatePairOrder ?? this.rotatePairOrder,
     );
   }
@@ -445,6 +505,9 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
         defaultTripletRestSeconds.value,
       );
     }
+    if (loadIncrementKg.present) {
+      map['load_increment_kg'] = Variable<double>(loadIncrementKg.value);
+    }
     if (rotatePairOrder.present) {
       map['rotate_pair_order'] = Variable<bool>(rotatePairOrder.value);
     }
@@ -459,6 +522,7 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfile> {
           ..write('unitSystem: $unitSystem, ')
           ..write('defaultPairRestSeconds: $defaultPairRestSeconds, ')
           ..write('defaultTripletRestSeconds: $defaultTripletRestSeconds, ')
+          ..write('loadIncrementKg: $loadIncrementKg, ')
           ..write('rotatePairOrder: $rotatePairOrder')
           ..write(')'))
         .toString();
@@ -2219,10 +2283,9 @@ class $SetRecordsTable extends SetRecords
   late final GeneratedColumn<double> weightKg = GeneratedColumn<double>(
     'weight_kg',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.double,
     requiredDuringInsert: false,
-    defaultValue: const Constant(0),
   );
   static const VerificationMeta _recordedAtMeta = const VerificationMeta(
     'recordedAt',
@@ -2368,7 +2431,7 @@ class $SetRecordsTable extends SetRecords
       weightKg: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}weight_kg'],
-      )!,
+      ),
       recordedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}recorded_at'],
@@ -2393,7 +2456,14 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
 
   /// The load actually used for this set, independent of the exercise's
   /// current working load.
-  final double weightKg;
+  ///
+  /// **Null is not zero.** Null means no weight was entered — a bodyweight
+  /// set, or a loadable exercise the user did not bother to record a load
+  /// for; zero means the user said, explicitly, that this set carried nothing
+  /// extra. That distinction is what lets the logger leave the field alone
+  /// when someone types 0 rather than re-seeding it from the working load,
+  /// and it is why this column is nullable in schema 7.
+  final double? weightKg;
   final DateTime recordedAt;
   const SetRecord({
     required this.id,
@@ -2403,7 +2473,7 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
     required this.setIndex,
     this.repsCompleted,
     this.holdSeconds,
-    required this.weightKg,
+    this.weightKg,
     required this.recordedAt,
   });
   @override
@@ -2420,7 +2490,9 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
     if (!nullToAbsent || holdSeconds != null) {
       map['hold_seconds'] = Variable<int>(holdSeconds);
     }
-    map['weight_kg'] = Variable<double>(weightKg);
+    if (!nullToAbsent || weightKg != null) {
+      map['weight_kg'] = Variable<double>(weightKg);
+    }
     map['recorded_at'] = Variable<DateTime>(recordedAt);
     return map;
   }
@@ -2438,7 +2510,9 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
       holdSeconds: holdSeconds == null && nullToAbsent
           ? const Value.absent()
           : Value(holdSeconds),
-      weightKg: Value(weightKg),
+      weightKg: weightKg == null && nullToAbsent
+          ? const Value.absent()
+          : Value(weightKg),
       recordedAt: Value(recordedAt),
     );
   }
@@ -2456,7 +2530,7 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
       setIndex: serializer.fromJson<int>(json['setIndex']),
       repsCompleted: serializer.fromJson<int?>(json['repsCompleted']),
       holdSeconds: serializer.fromJson<int?>(json['holdSeconds']),
-      weightKg: serializer.fromJson<double>(json['weightKg']),
+      weightKg: serializer.fromJson<double?>(json['weightKg']),
       recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
     );
   }
@@ -2471,7 +2545,7 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
       'setIndex': serializer.toJson<int>(setIndex),
       'repsCompleted': serializer.toJson<int?>(repsCompleted),
       'holdSeconds': serializer.toJson<int?>(holdSeconds),
-      'weightKg': serializer.toJson<double>(weightKg),
+      'weightKg': serializer.toJson<double?>(weightKg),
       'recordedAt': serializer.toJson<DateTime>(recordedAt),
     };
   }
@@ -2484,7 +2558,7 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
     int? setIndex,
     Value<int?> repsCompleted = const Value.absent(),
     Value<int?> holdSeconds = const Value.absent(),
-    double? weightKg,
+    Value<double?> weightKg = const Value.absent(),
     DateTime? recordedAt,
   }) => SetRecord(
     id: id ?? this.id,
@@ -2496,7 +2570,7 @@ class SetRecord extends DataClass implements Insertable<SetRecord> {
         ? repsCompleted.value
         : this.repsCompleted,
     holdSeconds: holdSeconds.present ? holdSeconds.value : this.holdSeconds,
-    weightKg: weightKg ?? this.weightKg,
+    weightKg: weightKg.present ? weightKg.value : this.weightKg,
     recordedAt: recordedAt ?? this.recordedAt,
   );
   SetRecord copyWithCompanion(SetRecordsCompanion data) {
@@ -2572,7 +2646,7 @@ class SetRecordsCompanion extends UpdateCompanion<SetRecord> {
   final Value<int> setIndex;
   final Value<int?> repsCompleted;
   final Value<int?> holdSeconds;
-  final Value<double> weightKg;
+  final Value<double?> weightKg;
   final Value<DateTime> recordedAt;
   final Value<int> rowid;
   const SetRecordsCompanion({
@@ -2638,7 +2712,7 @@ class SetRecordsCompanion extends UpdateCompanion<SetRecord> {
     Value<int>? setIndex,
     Value<int?>? repsCompleted,
     Value<int?>? holdSeconds,
-    Value<double>? weightKg,
+    Value<double?>? weightKg,
     Value<DateTime>? recordedAt,
     Value<int>? rowid,
   }) {
@@ -2754,6 +2828,7 @@ typedef $$UserProfilesTableCreateCompanionBuilder =
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
+      Value<double?> loadIncrementKg,
       Value<bool> rotatePairOrder,
     });
 typedef $$UserProfilesTableUpdateCompanionBuilder =
@@ -2763,6 +2838,7 @@ typedef $$UserProfilesTableUpdateCompanionBuilder =
       Value<String> unitSystem,
       Value<int> defaultPairRestSeconds,
       Value<int> defaultTripletRestSeconds,
+      Value<double?> loadIncrementKg,
       Value<bool> rotatePairOrder,
     });
 
@@ -2797,6 +2873,11 @@ class $$UserProfilesTableFilterComposer
 
   ColumnFilters<int> get defaultTripletRestSeconds => $composableBuilder(
     column: $table.defaultTripletRestSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get loadIncrementKg => $composableBuilder(
+    column: $table.loadIncrementKg,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2840,6 +2921,11 @@ class $$UserProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get loadIncrementKg => $composableBuilder(
+    column: $table.loadIncrementKg,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get rotatePairOrder => $composableBuilder(
     column: $table.rotatePairOrder,
     builder: (column) => ColumnOrderings(column),
@@ -2875,6 +2961,11 @@ class $$UserProfilesTableAnnotationComposer
 
   GeneratedColumn<int> get defaultTripletRestSeconds => $composableBuilder(
     column: $table.defaultTripletRestSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get loadIncrementKg => $composableBuilder(
+    column: $table.loadIncrementKg,
     builder: (column) => column,
   );
 
@@ -2920,6 +3011,7 @@ class $$UserProfilesTableTableManager
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
+                Value<double?> loadIncrementKg = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion(
                 id: id,
@@ -2927,6 +3019,7 @@ class $$UserProfilesTableTableManager
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
+                loadIncrementKg: loadIncrementKg,
                 rotatePairOrder: rotatePairOrder,
               ),
           createCompanionCallback:
@@ -2936,6 +3029,7 @@ class $$UserProfilesTableTableManager
                 Value<String> unitSystem = const Value.absent(),
                 Value<int> defaultPairRestSeconds = const Value.absent(),
                 Value<int> defaultTripletRestSeconds = const Value.absent(),
+                Value<double?> loadIncrementKg = const Value.absent(),
                 Value<bool> rotatePairOrder = const Value.absent(),
               }) => UserProfilesCompanion.insert(
                 id: id,
@@ -2943,6 +3037,7 @@ class $$UserProfilesTableTableManager
                 unitSystem: unitSystem,
                 defaultPairRestSeconds: defaultPairRestSeconds,
                 defaultTripletRestSeconds: defaultTripletRestSeconds,
+                loadIncrementKg: loadIncrementKg,
                 rotatePairOrder: rotatePairOrder,
               ),
           withReferenceMapper: (p0) => p0
@@ -3975,7 +4070,7 @@ typedef $$SetRecordsTableCreateCompanionBuilder =
       required int setIndex,
       Value<int?> repsCompleted,
       Value<int?> holdSeconds,
-      Value<double> weightKg,
+      Value<double?> weightKg,
       required DateTime recordedAt,
       Value<int> rowid,
     });
@@ -3988,7 +4083,7 @@ typedef $$SetRecordsTableUpdateCompanionBuilder =
       Value<int> setIndex,
       Value<int?> repsCompleted,
       Value<int?> holdSeconds,
-      Value<double> weightKg,
+      Value<double?> weightKg,
       Value<DateTime> recordedAt,
       Value<int> rowid,
     });
@@ -4262,7 +4357,7 @@ class $$SetRecordsTableTableManager
                 Value<int> setIndex = const Value.absent(),
                 Value<int?> repsCompleted = const Value.absent(),
                 Value<int?> holdSeconds = const Value.absent(),
-                Value<double> weightKg = const Value.absent(),
+                Value<double?> weightKg = const Value.absent(),
                 Value<DateTime> recordedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SetRecordsCompanion(
@@ -4286,7 +4381,7 @@ class $$SetRecordsTableTableManager
                 required int setIndex,
                 Value<int?> repsCompleted = const Value.absent(),
                 Value<int?> holdSeconds = const Value.absent(),
-                Value<double> weightKg = const Value.absent(),
+                Value<double?> weightKg = const Value.absent(),
                 required DateTime recordedAt,
                 Value<int> rowid = const Value.absent(),
               }) => SetRecordsCompanion.insert(
