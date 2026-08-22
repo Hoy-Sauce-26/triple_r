@@ -212,6 +212,21 @@ from the working load and overruled the user every set. The logger's helper
 text spells the difference out, because an empty box and a box holding `0` look
 much more alike than they mean.
 
+The distinction only runs forward. Everything written before v7 went into a
+NOT NULL DEFAULT 0 column that no screen could type a zero into, so a zero in
+an old row means "nobody filled this in" — which is every set of every
+bodyweight exercise ever logged. The v7 migration nulls them out for exactly
+that reason; carrying them across as deliberate zeros put "9 @ 0 lb" on every
+push-up in the history.
+
+Two rules govern showing a load, and both are needed:
+
+- **The exercise must be `loadable`.** A row can carry a number the exercise
+  does not take, and "@ 0 lb" on a push-up is nonsense the user cannot even
+  correct, since the edit dialog hides its weight field on the same flag.
+- **The weight must be non-null** — but zero still prints. On a weighted dip,
+  zero is a choice, and hiding it makes the set look unlogged.
+
 `exercise_states.working_load_kg` is the app's **plan** for next session;
 `set_records.weight_kg` is the **record** of what was lifted. When they
 disagree at the end of a session the log wins, and the plan is written back to
@@ -226,7 +241,7 @@ next prompt offers them the bare increment as a *total*.
 | 4 | `workout_sessions.session_ordinal` |
 | 5 | Height dropped (table rebuild — SQLite cannot drop a column in place) |
 | 6 | `user_profiles.planned_rotation_index` |
-| 7 | `user_profiles.load_increment_kg`; `set_records.weight_kg` made nullable (table rebuild — the first migration that *widens* a column) |
+| 7 | `user_profiles.load_increment_kg`; `set_records.weight_kg` made nullable and its pre-existing zeros nulled (table rebuild — the first migration that *widens* a column, and the first that reinterprets data rather than moving it) |
 
 Every schema change needs a `schemaVersion` bump **and** a migration step,
 even pre-release. Exported backups carry their version and are re-imported

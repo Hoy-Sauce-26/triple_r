@@ -174,7 +174,7 @@ class _ExerciseGroupCard extends ConsumerWidget {
                   // the charts and the personal bests.
                   ActionChip(
                     visualDensity: VisualDensity.compact,
-                    label: Text(_label(set, perSide)),
+                    label: Text(_label(set, perSide, exercise)),
                     side: BorderSide(color: theme.colorScheme.outlineVariant),
                     onPressed: () => _edit(context, ref, set, exercise),
                   ),
@@ -217,11 +217,15 @@ class _ExerciseGroupCard extends ConsumerWidget {
         );
   }
 
-  String _label(SetRecord set, bool perSide) {
+  String _label(SetRecord set, bool perSide, Exercise? exercise) {
     final value = set.holdSeconds != null
         ? '${set.holdSeconds}s'
         : '${set.repsCompleted}${perSide ? '/side' : ''}';
-    if (set.weightKg case final weight?) {
+    // Gated on the exercise the same way [_edit] gates the dialog. A row can
+    // carry a weight the exercise no longer takes — a stored zero from before
+    // weights were nullable, or a path whose branch has changed under it — and
+    // "12 @ 0 lb" on a push-up is nonsense the user cannot even correct here.
+    if (set.weightKg case final weight? when exercise?.loadable ?? false) {
       return '$value @ ${formatWeight(weight, units)}';
     }
     return value;

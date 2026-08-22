@@ -739,7 +739,11 @@ class _SetRow extends StatelessWidget {
     final value =
         set.holdSeconds != null ? '${set.holdSeconds}s' : '${set.repsCompleted}';
     final weight = set.weightKg;
-    if (!loadable || weight == null || weight == 0) return value;
+    // Null is dropped, zero is not. On an exercise that takes a load, zero is
+    // a real answer — it is how someone records dropping back to bare
+    // bodyweight — and hiding it makes that set look like the weight was
+    // never entered.
+    if (!loadable || weight == null) return value;
     return '$value @ ${formatWeight(weight, units)}';
   }
 }

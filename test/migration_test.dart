@@ -77,6 +77,10 @@ void _v6Schema(CommonDatabase raw) {
       (id, session_id, path_id, exercise_id, set_index, reps_completed,
        weight_kg, recorded_at)
       VALUES ('r1', 's1', 'pushup', 'full_pushups', 1, 8, 20.0, 1740000000);
+    INSERT INTO set_records
+      (id, session_id, path_id, exercise_id, set_index, reps_completed,
+       weight_kg, recorded_at)
+      VALUES ('r0', 's1', 'pushup', 'full_pushups', 2, 9, 0.0, 1740000000);
   ''');
   raw.execute('PRAGMA user_version = 6');
 }
@@ -89,23 +93,33 @@ void main() {
   });
   tearDown(() => db.close());
 
+  Future<SetRecord> row(String id) =>
+      (db.select(db.setRecords)..where((s) => s.id.equals(id))).getSingle();
+
   test('carries the existing rows across the set_records rebuild', () async {
     final rows = await db.select(db.setRecords).get();
-    expect(rows, hasLength(1));
-    expect(rows.single.repsCompleted, 8);
+    expect(rows, hasLength(2));
+    final r1 = await row('r1');
+    expect(r1.repsCompleted, 8);
     expect(
-      rows.single.weightKg,
+      r1.weightKg,
       20.0,
       reason: 'a load recorded before v7 is still a load after it',
     );
   });
 
-  test('leaves old rows reading as real numbers, never as "no entry"', () async {
-    // Everything written under v6 was NOT NULL, so nothing in an upgraded
-    // database can come back null. The distinction only starts applying to
-    // sets logged from here on.
-    final rows = await db.select(db.setRecords).get();
-    expect(rows.every((r) => r.weightKg != null), isTrue);
+  test('reads a pre-v7 zero as "no weight", not as a set lifted at zero',
+      () async {
+    // The column was NOT NULL DEFAULT 0 and no screen could enter a zero, so
+    // a zero in an old row only ever meant nobody filled the column in —
+    // which is every set of every bodyweight exercise ever logged. Carried
+    // across as a deliberate zero it renders as "9 @ 0 lb" on a push-up.
+    expect((await row('r0')).weightKg, isNull);
+    expect(
+      (await row('r1')).weightKg,
+      isNotNull,
+      reason: 'only the zeros are reinterpreted; real loads are untouched',
+    );
   });
 
   test('accepts a null weight once upgraded', () async {
@@ -115,15 +129,12 @@ void main() {
             sessionId: 's1',
             pathId: 'pushup',
             exerciseId: 'full_pushups',
-            setIndex: 2,
+            setIndex: 4,
             repsCompleted: const Value(9),
             recordedAt: DateTime(2026, 3, 1, 10),
           ),
         );
-    final row = await (db.select(db.setRecords)
-          ..where((s) => s.id.equals('r2')))
-        .getSingle();
-    expect(row.weightKg, isNull);
+    expect((await row('r2')).weightKg, isNull);
   });
 
   test('keeps the profile and adds the increment setting', () async {
